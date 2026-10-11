@@ -48,7 +48,6 @@ A web novel library for [KOReader](https://koreader.rocks/). Browse, follow and 
 | NovelFrance | French |
 | NovelFire | English |
 | Royal Road | English |
-| Scribble Hub | English |
 | SkyNovels | Spanish |
 | 69书吧 (69shu) | Chinese |
 
