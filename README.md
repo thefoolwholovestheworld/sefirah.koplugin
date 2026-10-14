@@ -71,7 +71,7 @@ A web novel and manga library for [KOReader](https://koreader.rocks/). Browse, f
 | MangaDex | Multi |
 | MangaPill | English |
 | FMTeam | French |
-| Anime-Sama (scans) | French |
+| Anime-Sama | French |
 
 Some sites are protected by Cloudflare or block certain networks, so a source can fail from time to time. Anime-Sama includes a DNS filter bypass for networks that block it. It only works over HTTPS, and not if the block is also applied to the IP address. When a source fails, Sefirah writes a `*_last_error.txt` file in its folder that helps to find out why.
 
