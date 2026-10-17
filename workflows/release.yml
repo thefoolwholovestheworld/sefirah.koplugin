@@ -1,0 +1,50 @@
+name: Sync from release
+on:
+  release:
+    types: [published]
+permissions:
+  contents: write
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Download update.zip from the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p /tmp/rel /tmp/new
+          gh release download "${{ github.event.release.tag_name }}" --pattern "update.zip" --dir /tmp/rel
+          unzip -q /tmp/rel/update.zip -d /tmp/new
+
+      - name: Replace repo files
+        run: |
+          cd /tmp/new
+          # si le zip contient un seul dossier à la racine, on entre dedans
+          if [ "$(ls -A | wc -l)" = "1" ] && [ -d "$(ls -A | head -1)" ]; then
+            cd "$(ls -A | head -1)"
+          fi
+          rsync -a --delete \
+            --exclude='.git' --exclude='.github' \
+            --exclude='README.md' --exclude='LICENSE' --exclude='NOTICE.md' \
+            --exclude='.gitattributes' \
+            ./ "$GITHUB_WORKSPACE"/
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "Sync from release ${{ github.event.release.tag_name }}"
+          git push origin main
+
+      - name: Build sefirah.koplugin.zip
+        run: git archive --format=zip --prefix=sefirah.koplugin/ -o sefirah.koplugin.zip HEAD
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" sefirah.koplugin.zip --clobber
