@@ -1,0 +1,42 @@
+
+name: Importer la Release v1.3
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Télécharger et extraire la Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download v1.3 \
+            --repo thefoolwholovestheworld/sefirah.koplugin \
+            --pattern '*.zip' \
+            --dir /tmp/release
+
+          mkdir -p /tmp/extracted
+          unzip -o /tmp/release/*.zip -d /tmp/extracted
+
+          find /tmp/extracted -type f
+
+      - name: Copier les fichiers
+        run: |
+          cp -a /tmp/extracted/. .
+          rm -rf .github/workflows/import-release.yml
+
+      - name: Enregistrer les changements
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "Importer la release v1.3"
+          git push
