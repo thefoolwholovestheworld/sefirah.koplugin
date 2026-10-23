@@ -1,42 +1,42 @@
-name: Sync from release
+
+name: Importer la Release v1.3
+
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
+
 permissions:
   contents: write
+
 jobs:
-  sync:
+  import:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
 
-      - name: Download sefirah.koplugin.zip from the release
+      - name: Télécharger et extraire la Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p /tmp/rel /tmp/new
-          gh release download "${{ github.event.release.tag_name }}" --pattern "sefirah.koplugin.zip" --dir /tmp/rel
-          unzip -q /tmp/rel/sefirah.koplugin.zip -d /tmp/new
+          gh release download v1.3 \
+            --repo thefoolwholovestheworld/sefirah.koplugin \
+            --pattern '*.zip' \
+            --dir /tmp/release
 
-      - name: Replace repo files
-        run: |
-          cd /tmp/new
-          # si le zip contient un seul dossier à la racine (sefirah.koplugin/), on entre dedans
-          if [ "$(ls -A | wc -l)" = "1" ] && [ -d "$(ls -A | head -1)" ]; then
-            cd "$(ls -A | head -1)"
-          fi
-          rsync -a --delete \
-            --exclude='.git' --exclude='.github' \
-            --exclude='README.md' --exclude='LICENSE' --exclude='NOTICE.md' \
-            --exclude='.gitattributes' \
-            ./ "$GITHUB_WORKSPACE"/
+          mkdir -p /tmp/extracted
+          unzip -o /tmp/release/*.zip -d /tmp/extracted
 
-      - name: Commit and push
+          find /tmp/extracted -type f
+
+      - name: Copier les fichiers
         run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@users.noreply.github.com"
+          cp -a /tmp/extracted/. .
+          rm -rf .github/workflows/import-release.yml
+
+      - name: Enregistrer les changements
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git diff --cached --quiet || git commit -m "Sync from release ${{ github.event.release.tag_name }}"
-          git push origin main
+          git diff --cached --quiet || git commit -m "Importer la release v1.3"
+          git push
