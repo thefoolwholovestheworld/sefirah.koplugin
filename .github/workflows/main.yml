@@ -1,8 +1,16 @@
+name: Importer la dernière Release
 
-name: Importer la Release v1.3
-
+# Se lance tout seul à chaque nouvelle Release publiée (v1.4, v1.5, …).
+# Peut aussi être lancé à la main : onglet Actions > Run workflow (tag facultatif, sinon la dernière Release).
 on:
+  release:
+    types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag de la Release à importer (ex. v1.4). Vide = la dernière."
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -11,32 +19,43 @@ jobs:
   import:
     runs-on: ubuntu-latest
     steps:
-      - name: Récupérer le dépôt
+      - name: Récupérer le dépôt (branche main)
         uses: actions/checkout@v4
+        with:
+          ref: main
 
-      - name: Télécharger et extraire la Release
+      - name: Télécharger la Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
-          gh release download v1.3 \
-            --repo thefoolwholovestheworld/sefirah.koplugin \
-            --pattern '*.zip' \
-            --dir /tmp/release
+          mkdir -p /tmp/release /tmp/extracted
+          if [ -z "$TAG" ]; then
+            TAG=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
+          fi
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "Release importée : $TAG"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.zip' --dir /tmp/release
+          unzip -oq /tmp/release/*.zip -d /tmp/extracted
 
-          mkdir -p /tmp/extracted
-          unzip -o /tmp/release/*.zip -d /tmp/extracted
-
-          find /tmp/extracted -type f
-
-      - name: Copier les fichiers
+      - name: Remplacer les fichiers du plugin
         run: |
-          cp -a /tmp/extracted/. .
-          rm -rf .github/workflows/import-release.yml
+          # Dossier du plugin = le plus proche de la racine qui contient _meta.lua
+          # (le zip peut contenir un dossier « sefirah.koplugin » ou les fichiers directement).
+          META=$(find /tmp/extracted -name _meta.lua -not -path '*/__MACOSX/*' | awk '{ print length, $0 }' | sort -n | head -1 | cut -d' ' -f2-)
+          if [ -z "$META" ]; then echo "Erreur : _meta.lua introuvable dans le zip."; exit 1; fi
+          SRC=$(dirname "$META")
+          echo "Dossier source : $SRC"
+          # --delete : les fichiers supprimés dans la nouvelle version disparaissent aussi du dépôt.
+          rsync -a --delete \
+            --exclude='.git/' --exclude='.github/' \
+            --exclude='README*' --exclude='LICENSE*' --exclude='.gitignore' \
+            "$SRC"/ ./
 
       - name: Enregistrer les changements
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git diff --cached --quiet || git commit -m "Importer la release v1.3"
-          git push
+          git diff --cached --quiet || git commit -m "Importer la release $TAG"
+          git push origin main
