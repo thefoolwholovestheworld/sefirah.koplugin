@@ -7,7 +7,7 @@ local T = require("core.i18n").T
 -- Se rouvre après chaque bascule pour que les libellés des boutons restent à jour.
 local UIManager        = require("ui/uimanager")
 local ButtonDialogTitle = require("ui/widget/buttondialogtitle")
-local Settings         = require("settings")
+local Settings         = require("sefirah_settings")
 local InputDialog      = require("ui/widget/inputdialog")
 local InfoMessage      = require("ui/widget/infomessage")
 local ConfirmBox       = require("ui/widget/confirmbox")
@@ -462,8 +462,8 @@ end
 -- (Les icônes resources/set_*.png sont des pictogrammes au trait fin ; set_chevron.png
 -- est la flèche de droite.)
 local CATEGORIES = {
-    { "settings",  "Paramètres",       "Général, téléchargements, couvertures, traduction, manga", "set_general" },
-    { "community", "Quêtes & niveaux", "Progression, défis et succès de lecture", "set_stats" },
+    { "settings",    "Paramètres",       "Général, téléchargements, couvertures, traduction, manga", "set_general" },
+    { "progression", "Quêtes & niveaux", "Progression, défis et succès de lecture", "set_stats" },
 }
 -- Sections regroupées dans « Paramètres » : { id dans categories(), titre de section }.
 local SETTINGS_SECTIONS = {
@@ -597,7 +597,7 @@ function SettingsDialog.build_rows()
     else
         rows = build_cards(P, function(id)
             -- « Quêtes & niveaux » ouvre directement le Centre de progression.
-            if id == "community" then require("core.quests").show(); return end
+            if id == "progression" then require("core.quests").show(); return end
             _cat = id; _page = 1; rebuild()
         end)
     end

@@ -46,7 +46,7 @@ local Stats    = require("core.stats")  -- alimente les statistiques générales
 local Avatars  = require("core.avatars")
 local Emoji    = require("core.emoji")
 local P        = require("ui.panel")
-local Settings = require("settings")
+local Settings = require("sefirah_settings")
 
 -- Masquage global des commentaires (bascule par appui long sur l'icône
 -- commentaire de l'onglet Chapitres, cf. ui/detail.lua). Quand c'est actif,

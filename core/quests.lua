@@ -4,7 +4,7 @@
 -- Quêtes : les objectifs quotidiens et hebdomadaires grandissent avec le niveau du joueur
 -- (faciles au niveau 1, de plus en plus exigeants ensuite) ; le niveau pris en compte est figé
 -- au début de la journée / de la semaine pour que les objectifs ne bougent pas en cours de route.
-local Settings = require("settings")
+local Settings = require("sefirah_settings")
 local T = require("core.i18n").T
 local Quests = {}
 
@@ -22,7 +22,9 @@ local XP_PAGE, XP_CHAPTER = 5, 20              -- novels
 local XP_PAGE_MANGA, XP_CHAPTER_MANGA = 2, 10  -- mangas (moins de lecture par page)
 local MIN_CHAPTER_PAGES = 3     -- pages réellement lues pour qu'un chapitre soit « terminé »
 
-local function level_of(xp) return math.floor(math.max(0, n(xp)) / 250) + 1 end
+local Progression = require("core.progression")
+local RandomQuests = require("core.randomquests")
+local level_of = Progression.level
 
 local function count_true(t, key_only)
     local c = 0
@@ -83,6 +85,12 @@ local function roll(d)
     if type(d.daily_titles) ~= "table" then d.daily_titles = {}; rolled = true end
     if not d.daily_level then d.daily_level = level_of(d.xp); rolled = true end
     if not d.week_level then d.week_level = level_of(d.xp); rolled = true end
+    if d.progression_version ~= 2 then
+        d.progression_version = 2
+        d.daily_level, d.week_level = level_of(d.xp), level_of(d.xp)
+        rolled = true
+    end
+    if RandomQuests.ensure(d) then rolled = true end
     return d, rolled
 end
 
@@ -207,45 +215,8 @@ local function defs(c, dlev, wlev, seed)
                  cur = math.min(cur, goal), goal = goal, done = cur >= goal }
     end
 
-    -- Quotidiennes : 10 par jour.
-    local L = dlev
-    local pages = ramp(10, 4, 120, L)
-    local chap  = ramp(1, 0.2, 6, L)
-    local mins  = ramp(5, 2, 60, L)
-    local best  = ramp(8, 3, 80, L)
-    local two   = ramp(2, 0.125, 4, L)
-    local pool = {
-        q("daily", "d_new",  "star", T("Explorer un nouveau titre"), T("Commencer la lecture d'un nouveau titre"), reward(30, L), c.daily_new, 1),
-        q("daily", "d_best", "flame",T("Pages en série"), T("Lire %d pages dans un même titre"):format(best), reward(25, L), c.daily_best, best),
-        q("daily", "d_two",  "book", T("Lecteur curieux"), T("Lire dans %d titres différents"):format(two), reward(30, L), c.daily_titles_n, two),
-    }
-    local daily = {
-        q("daily", "d_pages", "book",  T("Lecture assidue"),     T("Lire %d pages aujourd'hui"):format(pages),      reward(20, L), c.daily_pages,    pages),
-        q("daily", "d_chap",  "doc",   T("Un chapitre de plus"), (chap > 1 and T("Terminer %d chapitres") or T("Terminer %d chapitre")):format(chap), reward(30, L), c.daily_chapters, chap),
-        q("daily", "d_time",  "clock", T("Temps de lecture"),    T("Lire pendant %d minutes"):format(mins),         reward(25, L), c.daily_minutes,  mins),
-        pool[1], pool[2], pool[3],
-        q("daily", "d_pages2","book",  T("Grosse séance"),       T("Lire %d pages aujourd'hui"):format(pages * 2),  reward(40, L), c.daily_pages,    pages * 2),
-        q("daily", "d_chap2", "doc",   T("Chapitres en rafale"), T("Terminer %d chapitres"):format(chap * 2 + 1),   reward(50, L), c.daily_chapters, chap * 2 + 1),
-        q("daily", "d_time2", "clock", T("Séance fleuve"),       T("Lire pendant %d minutes"):format(mins * 2),     reward(45, L), c.daily_minutes,  mins * 2),
-        q("daily", "d_open",  "calendar", T("Retour quotidien"), T("Ouvrir Sefirah aujourd'hui"),                  reward(10, L), c.daily_open,     1),
-    }
-
-    -- Hebdomadaires.
-    local W = wlev
-    local wp, wc, wd = ramp(40, 20, 700, W), ramp(3, 1, 30, W), ramp(3, 0.17, 7, W)
-    local wt, wn = ramp(20, 10, 420, W), ramp(1, 0.17, 5, W)
-    local weekly = {
-        q("weekly", "w_pages", "book",     T("Lecteur régulier"),      T("Lire %d pages cette semaine"):format(wp),             reward(60, W), c.weekly_pages,    wp),
-        q("weekly", "w_chap",  "doc",      T("Marathon de chapitres"), T("Terminer %d chapitres cette semaine"):format(wc),     reward(50, W), c.weekly_chapters, wc),
-        q("weekly", "w_days",  "calendar", T("Lecteur assidu"),        T("Lire %d jours cette semaine"):format(wd),             reward(60, W), c.weekly_days,     wd),
-        q("weekly", "w_time",  "clock",    T("Longues séances"),       T("Lire pendant %d minutes cette semaine"):format(wt),   reward(60, W), c.weekly_minutes,  wt),
-        q("weekly", "w_new",   "star",     T("Grand explorateur"),     (wn > 1 and T("Découvrir %d nouveaux titres cette semaine") or T("Découvrir %d nouveau titre cette semaine")):format(wn), reward(50, W), c.weekly_new, wn),
-        q("weekly", "w_pages2","book",     T("Gros lecteur"),          T("Lire %d pages cette semaine"):format(wp * 2),         reward(90, W), c.weekly_pages,    wp * 2),
-        q("weekly", "w_chap2", "doc",      T("Chapitres à la chaîne"), T("Terminer %d chapitres cette semaine"):format(wc * 2), reward(80, W), c.weekly_chapters, wc * 2),
-        q("weekly", "w_time2", "clock",    T("Séances fleuves"),       T("Lire pendant %d minutes cette semaine"):format(wt * 2), reward(90, W), c.weekly_minutes, wt * 2),
-        q("weekly", "w_days7", "calendar", T("Sans relâche"),          T("Lire %d jours cette semaine"):format(7),              reward(100, W), c.weekly_days,    7),
-        q("weekly", "w_new2",  "star",     T("Curiosité insatiable"),  T("Découvrir %d nouveaux titres cette semaine"):format(wn * 2), reward(80, W), c.weekly_new, wn * 2),
-    }
+    -- 10 quêtes par période, tirées dans des familles variées ; tirage figé jusqu'au renouvellement.
+    local daily, weekly = RandomQuests.build(c, dlev, wlev, seed)
 
     local long = {}
     local rank_in = {}
@@ -267,9 +238,8 @@ local function defs(c, dlev, wlev, seed)
     return { daily = daily, weekly = weekly, long = long, achv = achv }
 end
 
-local function seed_of_day() return tonumber(os.date("%Y")) * 400 + tonumber(os.date("%j")) end
 local function all_defs(d)
-    return defs(counters(d), lvl(d.daily_level), lvl(d.week_level), seed_of_day())
+    return defs(counters(d), lvl(d.daily_level), lvl(d.week_level), d)
 end
 
 local function period_key(period)
@@ -467,8 +437,8 @@ function Quests.getProgress()
     if rolled then save(d) end
     local c = counters(d)
     local xp = math.max(0, n(d.xp))
-    local level = math.floor(xp / 250) + 1
-    c.xp, c.level, c.into_level, c.next_level = xp, level, xp % 250, 250
+    local level, into_level, next_level = Progression.progress(xp)
+    c.xp, c.level, c.into_level, c.next_level = xp, level, into_level, next_level
     return c
 end
 

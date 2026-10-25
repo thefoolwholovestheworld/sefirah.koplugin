@@ -18,7 +18,7 @@
 -- Le téléchargement lui-même reste Cache.downloadChapters (parallélisme par
 -- source, nouvelles tentatives) : rien ne change côté extensions.
 --
--- Réglages (settings.lua) : dl_ahead, dl_autoresume, dl_notify.
+-- Réglages (sefirah_settings.lua) : dl_ahead, dl_autoresume, dl_notify.
 
 local UIManager   = require("ui/uimanager")
 local logger      = require("logger")
@@ -70,7 +70,7 @@ local function tr(s)
 end
 
 local function setting(key)
-    local ok, S = pcall(require, "settings")
+    local ok, S = pcall(require, "sefirah_settings")
     if not ok or type(S) ~= "table" then return nil end
     local ok2, v = pcall(S.get, S, key)
     if ok2 then return v end

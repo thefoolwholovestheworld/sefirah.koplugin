@@ -27,7 +27,7 @@ local function sefirah_base_dir()
         local full = DataStorage:getFullDataDir() or DataStorage:getDataDir()
         home = full:match("^(.*)/%.adds/") or full:match("^(.*)/koreader$") or full
     end
-    local Settings = require("settings")
+    local Settings = require("sefirah_settings")
     if Settings:get("export_location_flat") then return home end
     return home .. "/Sefirah"
 end
@@ -570,7 +570,7 @@ function Export.show(ctx)
     end
     _ctx           = ctx
     local ch_cnt   = #(ctx.chapters or {})
-    local Settings = require("settings")
+    local Settings = require("sefirah_settings")
     local flat     = Settings:get("export_location_flat")
 
     local is_manga = is_manga_source(ctx.source_id)

@@ -1,3 +1,35 @@
+# Sefirah v1.4.1
+
+## Français
+
+### Corrections
+- **Novelfire** : le site redirige désormais vers novelphoenix.com avec une page JavaScript que KOReader ne peut pas suivre (« Impossible d'extraire le contenu du chapitre »). Sefirah suit maintenant cette redirection, et les chapitres s'ouvrent de nouveau.
+- **Novelfire** : les chapitres déjà téléchargés (en erreur) sont supprimés du cache au premier lancement. Les romans de la bibliothèque et la progression sont conservés.
+- **Novelfire** : extraction plus robuste si la structure de la page change, et enregistrement de la réponse du site dans `sefirah/novelfire_last_error.txt` en cas d'échec.
+- **Ouverture de Sefirah** : correction d'un conflit de nom avec d'autres plugins (« attempt to call method 'get' (a nil value) », `ui/library.lua`).
+
+### Nouveautés
+- **TruyenDichAI** : nouvelle extension, avec son icône.
+
+### Changements
+- L'onglet **Communauté**, pas terminé, est retiré pour cette version.
+
+## English
+
+### Fixes
+- **Novelfire**: the site now redirects to novelphoenix.com through a JavaScript page that KOReader can't follow ("Could not extract chapter content"). Sefirah now follows the redirect, and chapters open again.
+- **Novelfire**: already downloaded (broken) chapters are removed from the cache on first launch. Library novels and reading progress are kept.
+- **Novelfire**: more robust extraction if the page structure changes, and the site's response is saved to `sefirah/novelfire_last_error.txt` on failure.
+- **Opening Sefirah**: fixed a name conflict with other plugins ("attempt to call method 'get' (a nil value)", `ui/library.lua`).
+
+### New
+- **TruyenDichAI**: new extension, with its icon.
+
+### Changes
+- The unfinished **Community** tab is removed for this release.
+
+---
+
 # Sefirah v1.4
 
 ## Français

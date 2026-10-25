@@ -253,6 +253,24 @@ function DB.saveChapterCache(source_id, novel_path, chapters, total)
     f:close()
 end
 
+-- Supprime UNE seule fois (repère « .<marker> » dans le dossier) les listes de chapitres en cache
+-- d'une source — utile quand l'ancien choix de traduction enregistré dans la liste était mauvais.
+function DB.purgeChapterCacheOnce(source_id, marker)
+    ensure_chapter_cache_dir()
+    local mpath = chapter_cache_dir .. "/." .. tostring(marker)
+    if lfs.attributes(mpath, "mode") == "file" then return 0 end
+    local prefix = (source_id .. "__"):gsub("[^%w%-]", "_")
+    local n = 0
+    for name in lfs.dir(chapter_cache_dir) do
+        if name:sub(1, #prefix) == prefix and name:match("%.json$") then
+            if os.remove(chapter_cache_dir .. "/" .. name) then n = n + 1 end
+        end
+    end
+    local f = io.open(mpath, "wb")
+    if f then f:write("1"); f:close() end
+    return n
+end
+
 -- ── Cover image cache ─────────────────────────────────────────────────────────
 -- Raw image bytes stored as <db_dir>/covers/<key>.img
 

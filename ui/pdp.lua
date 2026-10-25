@@ -25,7 +25,7 @@ local UIManager       = require("ui/uimanager")
 local VerticalGroup   = require("ui/widget/verticalgroup")
 local VerticalSpan    = require("ui/widget/verticalspan")
 local P = require("ui.panel")
-local Settings = require("settings")
+local Settings = require("sefirah_settings")
 local T = require("core.i18n").T
 
 local Screen = Device.screen

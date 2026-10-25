@@ -12,7 +12,7 @@ local socket = require("socket")
 local logger = require("logger")
 local ok_json, JSON = pcall(require, "rapidjson")
 if not ok_json then JSON = require("json") end
-local Settings = require("settings")
+local Settings = require("sefirah_settings")
 local Cache    = require("core.cache")
 
 local Translate = {}

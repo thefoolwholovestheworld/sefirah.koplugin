@@ -23,7 +23,7 @@ local P      = require("ui.panel")
 local Quests = require("core.quests")
 local Pdp    = require("ui.pdp")
 local T      = require("core.i18n").T
-local Settings = require("settings")
+local Settings = require("sefirah_settings")
 
 local Screen = Device.screen
 local BLACK, WHITE = Blitbuffer.COLOR_BLACK, Blitbuffer.COLOR_WHITE
@@ -120,8 +120,8 @@ end
 local function show_help()
     local lines = {
         T("NIVEAUX"),
-        T("• Chaque tranche de 250 XP te fait gagner un niveau."),
-        T("• Tu commences au niveau 1 ; niveau 2 à 250 XP, niveau 3 à 500 XP, etc. Il n'y a pas de limite."),
+        T("• Chaque niveau demande plus d'XP : 250 XP, puis 325, 400, 475… (+75 XP par palier)."),
+        T("• Tu commences au niveau 1 ; niveau 2 à 250 XP, niveau 3 à 575 XP et niveau 4 à 975 XP au total."),
         T("• L'XP totale et le niveau sont ceux affichés dans le classement."),
         "",
         T("LIRE DES NOVELS"),
@@ -512,7 +512,7 @@ end
 local function player_fields(pl)
     local xp = math.max(0, tonumber(pl.xp) or 0)
     local name = tostring(pl.username or pl.pseudo or T("Lecteur"))
-    local lvl = math.max(1, tonumber(pl.level) or (math.floor(xp / 250) + 1))
+    local lvl = math.max(1, tonumber(pl.level) or require("core.progression").level(xp))
     return name, lvl, xp
 end
 

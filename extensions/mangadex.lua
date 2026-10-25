@@ -426,7 +426,7 @@ function ext:parseChapterImages(path)
         return nil, "at_home_unavailable"
     end
     local full = false
-    local ok_s, Settings = pcall(require, "settings")
+    local ok_s, Settings = pcall(require, "sefirah_settings")
     if ok_s and Settings and Settings:get("manga_full_quality") then full = true end
 
     local files = full and data.chapter.data or data.chapter.dataSaver

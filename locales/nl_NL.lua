@@ -35,6 +35,7 @@ return {
     ["Japonais"] = "Japans",
     ["Coréen"] = "Koreaans",
     ["Russe"] = "Russisch",
+    ["Vietnamien"] = "Vietnamees",
     ["Indonésien"] = "Indonesisch",
     ["Turc"] = "Turks",
     ["Arabe"] = "Arabisch",

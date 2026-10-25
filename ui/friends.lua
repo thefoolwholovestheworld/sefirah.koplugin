@@ -13,7 +13,7 @@ local function say(text, timeout)
     UIManager:show(InfoMessage:new{ text = tostring(text), timeout = timeout or 4 })
 end
 local function trim(s) local r = tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", ""); return r end
-local function lvl_of(x) return math.max(1, tonumber(x and x.level) or (math.floor((tonumber(x and x.xp) or 0) / 250) + 1)) end
+local function lvl_of(x) return math.max(1, tonumber(x and x.level) or require("core.progression").level(x and x.xp)) end
 
 local function run_online(fn)
     local ok, Online = pcall(require, "core.online")

@@ -35,6 +35,7 @@ return {
     ["Japonais"] = "日語",
     ["Coréen"] = "韓語",
     ["Russe"] = "俄語",
+    ["Vietnamien"] = "越南語",
     ["Indonésien"] = "印度尼西亞語",
     ["Turc"] = "土耳其語",
     ["Arabe"] = "阿拉伯語",

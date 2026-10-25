@@ -10,7 +10,7 @@ local InfoMessage = require("ui/widget/infomessage")
 local Online      = require("core.online")
 local ExtMgr      = require("core.extmgr")
 local Covers      = require("core.covers")
-local Settings    = require("settings")
+local Settings    = require("sefirah_settings")
 local P           = require("ui.panel")
 local LangFilter  = require("ui.lang_filter")
 local I18n        = require("core.i18n")
@@ -521,7 +521,7 @@ local function get_filters(source_id, is_search)
         cur = {}
         -- Reprend les derniers filtres choisis (mémorisés entre deux sessions) ;
         -- une valeur qui n'existe plus dans les options connues retombe sur le défaut.
-        local saved = (require("settings"):get("browse_filters") or {})[store] or {}
+        local saved = (require("sefirah_settings"):get("browse_filters") or {})[store] or {}
         -- Si la langue de Sefirah a changé depuis le dernier enregistrement, les filtres de
         -- langue repartent de la nouvelle langue ; sinon le choix manuel est conservé.
         local ui_changed = saved._ui ~= I18n.lang()
@@ -552,7 +552,7 @@ local function save_filters(source_id, is_search)
     local store = is_search and (source_id .. ":search") or source_id
     local cur = Browse._filters[store]
     if not cur then return end
-    local Settings = require("settings")
+    local Settings = require("sefirah_settings")
     local all = Settings:get("browse_filters") or {}
     local copy = {}
     for k, v in pairs(cur) do

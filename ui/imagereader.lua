@@ -49,7 +49,7 @@ local BottomContainer = require("ui/widget/container/bottomcontainer")
 local OverlapGroup    = require("ui/widget/overlapgroup")
 local InputDialog     = require("ui/widget/inputdialog")
 local RenderImage     = require("ui/renderimage")
-local Settings        = require("settings")
+local Settings        = require("sefirah_settings")
 local logger          = require("logger")
 local T               = require("core.i18n").T
 

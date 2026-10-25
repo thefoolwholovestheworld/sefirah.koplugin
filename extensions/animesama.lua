@@ -21,7 +21,7 @@ local function clean_host(h)
     return nil
 end
 local function saved_host()
-    local ok, Settings = pcall(require, "settings")
+    local ok, Settings = pcall(require, "sefirah_settings")
     if not ok or not Settings then return nil end
     local ok2, v = pcall(function() return Settings:getExt("animesama", "host", nil) end)
     return ok2 and clean_host(v) or nil
@@ -815,7 +815,7 @@ function ext:setHost(h)
     self.site = BASE
     if Bypass then Bypass.register(HOST) end
     state.blocked = false
-    pcall(function() require("settings"):setExt("animesama", "host", HOST) end)
+    pcall(function() require("sefirah_settings"):setExt("animesama", "host", HOST) end)
     return true
 end
 

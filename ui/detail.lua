@@ -16,7 +16,7 @@ local DB          = require("core.db")
 local Avatars     = require("core.avatars")
 local logger      = require("logger")
 local Cache       = require("core.cache")
-local Settings    = require("settings")
+local Settings    = require("sefirah_settings")
 local P           = require("ui.panel")
 local Device      = require("device")
 local Screen      = Device.screen
@@ -47,7 +47,7 @@ local function default_chapters_ascending()
     if v == nil then return true end
     return v
 end
-local _ascending    = default_chapters_ascending() -- ordre des chapitres affichés, persisté (cf. settings.lua)
+local _ascending    = default_chapters_ascending() -- ordre des chapitres affichés, persisté (cf. sefirah_settings.lua)
 local _panel        = nil
 local _cover_bb     = nil
 local _cover_data   = nil  -- octets bruts de la couverture décodée avec succès — permet de la
@@ -176,7 +176,7 @@ local DETAIL_TABS = {
 --   • le lecteur n'affiche plus les bulles de commentaires par paragraphe, ni
 --     l'accès au panneau de commentaires de chapitre, ni la section
 --     « Commentaires » de fin de chapitre (cf. ui/readerview.lua).
--- L'état est persisté (settings.lua : comments_hidden) et la bascule est
+-- L'état est persisté (sefirah_settings.lua : comments_hidden) et la bascule est
 -- purement locale : aucun appel réseau, l'écran est reconstruit immédiatement.
 local function comments_hidden()
     return Settings:get("comments_hidden") and true or false
@@ -1149,9 +1149,38 @@ local function show_volume_menu(info)
     P.showDropdown(items, action_y)
 end
 
+-- Choix du groupe de traduction (sources manga qui le proposent : MangaBall). Le choix est gardé
+-- par manga et appliqué aux prochains téléchargements ; un chapitre déjà téléchargé reste tel quel.
+local function show_group_menu(info)
+    local ext = ExtMgr.get(_source_id)
+    if not (ext and ext.listGroups) then return end
+    local action_y = P.TITLE_H + P.HAIRLINE + Screen:scaleBySize(50)
+    local ok_g, groups = pcall(ext.listGroups, ext, _all_chapters)
+    groups = ok_g and groups or {}
+    local current = ""
+    pcall(function() current = ext:getGroup(info.path or "") or "" end)
+    local function choose(id, label)
+        pcall(ext.setGroup, ext, info.path or "", id)
+        UIManager:show(InfoMessage:new{
+            text = (id == "") and T("Groupe : automatique.\nLes chapitres déjà téléchargés ne changent pas : « Vider le cache des chapitres » pour les retélécharger.")
+                or string.format(T("Groupe : %s.\nLes chapitres déjà téléchargés ne changent pas : « Vider le cache des chapitres » pour les retélécharger."), label),
+            timeout = 4,
+        })
+    end
+    local items = {
+        { T("Automatique") .. (current == "" and "  ✓" or ""), function() choose("", "") end },
+    }
+    for _, g in ipairs(groups) do
+        local id, label = g.id, g.label
+        items[#items + 1] = { string.format("%s  (%d)", label, g.count or 0)
+            .. (current == id and "  ✓" or ""), function() choose(id, label) end }
+    end
+    P.showDropdown(items, action_y)
+end
+
 local function show_chapter_actions(info)
     local action_y = P.TITLE_H + P.HAIRLINE + Screen:scaleBySize(50)
-    P.showDropdown({
+    local items = {
         { T("Sélectionner des chapitres"), function()
             _sel_mode = true
             Detail.rebuild(info, true)
@@ -1177,7 +1206,12 @@ local function show_chapter_actions(info)
             UIManager:show(InfoMessage:new{ text = T("Cache des chapitres supprimé."), timeout = 2 })
             Detail.rebuild(info, true)
         end },
-    }, action_y)
+    }
+    local ext_g = ExtMgr.get(_source_id)
+    if ext_g and ext_g.type == "manga" and ext_g.listGroups then
+        table.insert(items, 3, { T("Groupe de traduction"), function() show_group_menu(info) end })
+    end
+    P.showDropdown(items, action_y)
 end
 
 -- Menu des actions sur la sélection (bouton « Actions » de la barre).
@@ -2493,7 +2527,7 @@ function Detail.fetch(source_id, path, force_refresh)
     _novel_info   = nil
     _page         = 1
     _detail_tab   = "details"
-    -- Préférence persistée (cf. settings.lua) : ne PAS remettre à false ici
+    -- Préférence persistée (cf. sefirah_settings.lua) : ne PAS remettre à false ici
     -- à chaque nouveau roman ouvert, sinon la sauvegarde n'aurait aucun
     -- effet visible au-delà du roman courant.
     _ascending    = default_chapters_ascending()

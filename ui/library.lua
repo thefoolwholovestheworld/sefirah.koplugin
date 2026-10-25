@@ -11,7 +11,7 @@ local DB          = require("core.db")
 local Cache       = require("core.cache")
 local Covers      = require("core.covers")
 local ExtMgr      = require("core.extmgr")
-local Settings    = require("settings")
+local Settings    = require("sefirah_settings")
 local P           = require("ui.panel")
 local VerticalSpan = require("ui/widget/verticalspan")
 

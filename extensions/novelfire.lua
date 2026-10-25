@@ -206,14 +206,42 @@ end
 
 -- ── HTTP helper ───────────────────────────────────────────────────────────────
 
+-- novelfire.net ne renvoie plus la page demandée mais un petit écran « Loading… » qui redirige
+-- en JavaScript (window.location.href = "https://novelphoenix.com/novel/…"). KOReader n'exécute
+-- pas ce JavaScript : on lit l'adresse et on la suit nous-mêmes. Seuls ces deux domaines sont suivis.
+local ALLOWED_HOSTS = { ["novelfire.net"] = true, ["novelphoenix.com"] = true }
+
+local function stub_target(body)
+    if type(body) ~= "string" or #body > 6000 then return nil end
+    local u = body:match('window%.location%.href%s*=%s*"([^"]+)"')
+        or body:match("window%.location%.href%s*=%s*'([^']+)'")
+    if not u then return nil end
+    u = u:gsub("\\/", "/")
+    local host = u:match("^https?://([^/:%?#]+)")
+    if host and ALLOWED_HOSTS[host:lower():gsub("^www%.", "")] then return u end
+    return nil
+end
+
+local function origin_of(url)
+    return url:match("^(https?://[^/]+)") or BASE
+end
+
 local function http_get(url)
-    local body, code = require("core.net").get(url, {
-        headers = {
-            ["Accept"]  = "text/html,application/xhtml+xml,*/*;q=0.8",
-            ["Referer"] = BASE .. "/",
-        },
-        timeout = 10,
-    })
+    local body, code
+    for _ = 1, 4 do
+        body, code = require("core.net").get(url, {
+            headers = {
+                ["Accept"]  = "text/html,application/xhtml+xml,*/*;q=0.8",
+                ["Referer"] = origin_of(url) .. "/",
+            },
+            timeout = 10,
+        })
+        if not body then break end
+        local nxt = stub_target(body)
+        if not nxt or nxt == url then break end
+        logger.dbg("NovelFire: redirection JavaScript vers", nxt)
+        url = nxt
+    end
     if not body then
         logger.err("NovelFire: http_get FAILED url=", url, "code=", tostring(code))
         return nil, code
@@ -675,14 +703,46 @@ end
 function ext:parseChapter(path)
     local url  = (path:match("^https?://") and path) or (BASE .. path)
     local html = http_get(url)
+    if not html then
+        -- novelfire.net injoignable : on essaie directement novelphoenix.com (/book/ → /novel/).
+        local alt = path:match("^/book/(.+)$")
+        if alt then html = http_get("https://novelphoenix.com/novel/" .. alt) end
+    end
     if not html then return "<p>Error fetching chapter.</p>" end
 
     -- Extract chapter content using the balanced-div extractor so nested divs are handled.
     local content = extract_div(html, '<div[^>]*id="chapter%-content"')
-        or extract_div(html, '<div[^>]*class="[^"]*chapter%-content[^"]*"')
+        or extract_div(html, '<div[^>]*id="content"[^>]*data%-chapter%-id')
         or extract_div(html, '<div[^>]*id="content"')
+        or extract_div(html, '<div[^>]*class="[^"]*chapter%-content[^"]*"')
+        or extract_div(html, '<div[^>]*data%-reader%-chapter%-container')
+        or extract_div(html, '<div[^>]*id="chapter%-container"')
 
-    if not content then return "<p>Could not extract chapter content.</p>" end
+    -- Dernier recours : le site a changé de structure (ou de domaine : novelfire.net renvoie
+    -- maintenant vers novelphoenix.com) — on prend les <p> de la page s'il y en a assez.
+    if not content or #content < 200 then
+        local paras = {}
+        for p in html:gmatch("<p[^>]*>.-</p>") do
+            local t = p:gsub("<[^>]+>", ""):gsub("%s+", " ")
+            if #t > 3 then paras[#paras + 1] = p end
+        end
+        if #paras >= 8 then content = table.concat(paras, "\n") end
+    end
+
+    if not content then
+        -- On garde la réponse reçue pour comprendre ce que le site renvoie.
+        pcall(function()
+            local dir = require("datastorage"):getSettingsDir() .. "/sefirah"
+            local ok_lfs, lfs = pcall(require, "libs/libkoreader-lfs")
+            if ok_lfs and lfs then pcall(lfs.mkdir, dir) end
+            local f = io.open(dir .. "/novelfire_last_error.txt", "wb")
+            if f then
+                f:write("chapitre sans contenu : " .. url .. "\ntaille : " .. #html .. "\n\n" .. html:sub(1, 200000))
+                f:close()
+            end
+        end)
+        return "<p>Could not extract chapter content.</p>"
+    end
 
     -- Remove les éléments d'interface du site qui ne font pas partie du chapitre.
     -- Cela comprend "Restore scroll position", le bloc Tip/Report et leurs

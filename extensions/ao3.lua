@@ -538,7 +538,7 @@ end
 
 -- ── Extension table ───────────────────────────────────────────────────────────
 
-local Settings = require("settings")
+local Settings = require("sefirah_settings")
 
 local ext = {
     review_cache_rev = 2,  -- change quand le format des avis change (invalide le cache disque)

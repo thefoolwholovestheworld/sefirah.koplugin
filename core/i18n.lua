@@ -31,7 +31,7 @@ local _chain         -- liste de tables de traduction à consulter, dans l'ordre
 local function detect()
     local code
     -- Langue choisie dans Paramètres › Langue du plugin (prioritaire).
-    local ok_s, S = pcall(require, "settings")
+    local ok_s, S = pcall(require, "sefirah_settings")
     if ok_s and type(S) == "table" and S.get then
         local ok_v, v = pcall(S.get, S, "plugin_language")
         if ok_v and type(v) == "string" and v ~= "" and v ~= "auto" then return v end

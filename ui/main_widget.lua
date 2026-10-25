@@ -135,7 +135,7 @@ end
 -- ── Tout fermer ───────────────────────────────────────────────────────────────
 
 function SefirahUI.close()
-    pcall(function() require("settings").flushNow() end)
+    pcall(function() require("sefirah_settings").flushNow() end)
     pcall(function() require("core.db").flush() end)
     pcall(function() require("core.cache").flush() end)
     -- IMPORTANT : Detail garde son propre pointeur vers le FullScreenPanel et

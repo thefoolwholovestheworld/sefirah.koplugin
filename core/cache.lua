@@ -338,6 +338,26 @@ function Cache.removeNovel(source_id, novel_path)
     save_summary()
 end
 
+-- Supprime du cache tous les chapitres téléchargés d'une source (HTML, commentaires, traductions),
+-- en gardant les romans de la bibliothèque et la progression de lecture. Renvoie le nombre de chapitres.
+function Cache.purgeSource(source_id)
+    local data = load_summary()
+    local n = 0
+    for _, e in pairs(data.novels) do
+        if e.source_id == source_id then
+            for cp in pairs(e.chapters or {}) do
+                os.remove(content_path(source_id, e.novel_path, cp))
+                os.remove(comments_path(source_id, e.novel_path, cp))
+                pcall(Cache.removeAllTranslations, source_id, e.novel_path, cp)
+                n = n + 1
+            end
+            e.chapters = {}
+        end
+    end
+    if n > 0 then save_summary() end
+    return n
+end
+
 -- ── Progression de lecture ────────────────────────────────────────────────────
 
 function Cache.setProgress(source_id, novel_path, chapter_path, percent, current_page, total_pages, completed, charpos, top_line_num)
@@ -526,7 +546,7 @@ function Cache.downloadChapter(ext, source_id, novel_path, chapter, on_done, for
     -- hors ligne ») car ils multiplient le temps de téléchargement d'un chapitre.
     -- Sans eux, les commentaires restent consultables en ligne en tapant 💬.
     if stored then
-        local ok_s, Settings = pcall(require, "settings")
+        local ok_s, Settings = pcall(require, "sefirah_settings")
         if ok_s and Settings:get("offline_comments") then
             pcall(cache_chapter_comments, ext, source_id, novel_path, key, html)
         end
@@ -577,7 +597,7 @@ function Cache.downloadChapterAsync(ext, source_id, novel_path, chapter, on_done
     local key = ch_key(chapter)
     if Cache.isChapterCached(source_id, novel_path, key) then return on_done(true) end
     local ref = ch_source_ref(chapter)
-    local ok_s, Settings = pcall(require, "settings")
+    local ok_s, Settings = pcall(require, "sefirah_settings")
     local ok_p, Parallel = pcall(require, "core.parallel")
     if not ref or not ok_p or not Parallel.available()
        or (ok_s and Settings:get("offline_comments")) then
@@ -627,7 +647,7 @@ function Cache.downloadChapters(ext, source_id, novel_path, chapters, on_progres
     end
 
     local width = Cache.parallelWidth(source_id)
-    local ok_s, Settings = pcall(require, "settings")
+    local ok_s, Settings = pcall(require, "sefirah_settings")
     local offline_comments = ok_s and Settings:get("offline_comments")
     local ok_p, Parallel = pcall(require, "core.parallel")
     -- Même pour une source « une seule à la fois » (width = 1) ou un seul chapitre, le

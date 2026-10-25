@@ -36,6 +36,7 @@ local metas = {
     { id = "fmteam",      name = "FMTeam",               site = "https://fmteam.fr",              lang = "fr",    version = "0.2.0", runtime = "lua", type = "manga" },
     { id = "ranobehub",   name = "RanobeHub",            site = "https://ranobehub.org",          lang = "ru",    version = "0.1.0", runtime = "lua" },
     { id = "kakuyomu",    name = "Kakuyomu",             site = "https://kakuyomu.jp",            lang = "ja",    version = "0.1.0", runtime = "lua" },
+    { id = "truyendichai", name = "TruyenDichAI",        site = "https://truyendich.space",       lang = "vi",    version = "0.1.0", runtime = "lua" },
     { id = "69shu",       name = "69书吧",                   site = "https://www.69shu.xyz",         lang = "zh",    version = "1.5.0", runtime = "lua" },
 }
 
@@ -43,7 +44,7 @@ local loaded = {}
 
 -- Adresse enregistrée par l'utilisateur pour Anime-Sama (réglages de la source).
 do
-    local ok, Settings = pcall(require, "settings")
+    local ok, Settings = pcall(require, "sefirah_settings")
     if ok and Settings then
         local ok2, h = pcall(function() return Settings:getExt("animesama", "host", nil) end)
         if ok2 and type(h) == "string" and h ~= "" then
@@ -114,7 +115,7 @@ end
 -- d'apparaître dans Parcourir et d'être utilisée par la recherche globale.
 local function installed_set()
     local set = {}
-    local list = require("settings"):get("installed_sources")
+    local list = require("sefirah_settings"):get("installed_sources")
     if type(list) == "table" then
         for _, id in ipairs(list) do set[id] = true end
     end
@@ -140,7 +141,7 @@ end
 local LANG_LABELS = {
     fr = T("Français"), en = T("Anglais"), es = T("Espagnol"), zh = T("Chinois"),
     pt = T("Portugais"), de = T("Allemand"), it = T("Italien"), ja = T("Japonais"),
-    ko = T("Coréen"), multi = T("Multilingue"), ru = T("Russe"), id = T("Indonésien"), tr = T("Turc"), ar = T("Arabe"),
+    ko = T("Coréen"), multi = T("Multilingue"), ru = T("Russe"), id = T("Indonésien"), tr = T("Turc"), ar = T("Arabe"), vi = T("Vietnamien"),
 }
 
 function ExtMgr.langCode(m)
@@ -171,7 +172,7 @@ end
 -- Codes de langue actuellement retenus par le filtre (ordre d'affichage),
 -- limités aux langues qui existent encore. Liste vide = pas de filtre.
 function ExtMgr.activeLangCodes(all_sources)
-    local sel = require("settings"):get("lang_filter")
+    local sel = require("sefirah_settings"):get("lang_filter")
     if type(sel) ~= "table" or #sel == 0 then return {} end
     local wanted = {}
     for _, c in ipairs(sel) do wanted[c] = true end
@@ -202,11 +203,11 @@ function ExtMgr.kindOf(id)
 end
 
 function ExtMgr.currentKind()
-    return require("settings"):get("content_kind") == "manga" and "manga" or "novels"
+    return require("sefirah_settings"):get("content_kind") == "manga" and "manga" or "novels"
 end
 
 function ExtMgr.setKind(k)
-    require("settings"):set("content_kind", k == "manga" and "manga" or "novels")
+    require("sefirah_settings"):set("content_kind", k == "manga" and "manga" or "novels")
 end
 
 local function filter_by_kind(all)
@@ -252,7 +253,7 @@ function ExtMgr.install(id)
         return false, T("Source introuvable")
     end
     if ExtMgr.isInstalled(id) then return true end
-    local Settings = require("settings")
+    local Settings = require("sefirah_settings")
     local list = {}
     for _, v in ipairs(Settings:get("installed_sources") or {}) do list[#list + 1] = v end
     list[#list + 1] = id
@@ -261,7 +262,7 @@ function ExtMgr.install(id)
 end
 
 function ExtMgr.uninstall(id)
-    local Settings = require("settings")
+    local Settings = require("sefirah_settings")
     local list = {}
     for _, v in ipairs(Settings:get("installed_sources") or {}) do
         if v ~= id then list[#list + 1] = v end

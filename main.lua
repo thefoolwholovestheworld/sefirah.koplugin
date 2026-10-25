@@ -3,7 +3,7 @@
 -- Sefirah is a FORK of Mythos by unitreign (GPL-3.0), modified by thefoolwholovestheworld.
 
 -- Sefirah — point d'entrée principal du plugin.
-_G.SEFIRAH_VERSION = "1.4"
+_G.SEFIRAH_VERSION = "1.4.1"
 
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local UIManager       = require("ui/uimanager")
@@ -28,7 +28,7 @@ _G.sefirah_close_all = close_all
 -- « loop or previous error loading module » aux ouvertures suivantes.
 local _main_dir = (debug.getinfo(1, "S").source or ""):match("^@?(.+)/[^/]+%.lua$") or "."
 local REQUIRED_FILES = {
-    "settings.lua",
+    "sefirah_settings.lua",
     "core/i18n.lua", "core/db.lua", "core/cache.lua", "core/covers.lua", "core/epub.lua",
     "core/avatars.lua", "core/extmgr.lua", "core/net.lua", "core/online.lua", "core/http.lua", "core/newch.lua",
     "core/manga.lua", "core/parallel.lua", "core/dlqueue.lua", "core/stats.lua", "core/quests.lua", "core/night.lua", "core/translate.lua", "core/emoji.lua",
@@ -59,7 +59,7 @@ end
 local function forget_failed_modules()
     for name, mod in pairs(package.loaded) do
         if type(name) == "string" and type(mod) ~= "table" and type(mod) ~= "function"
-            and (name:match("^ui%.") or name:match("^core%.") or name == "settings") then
+            and (name:match("^ui%.") or name:match("^core%.") or name == "sefirah_settings") then
             package.loaded[name] = nil
         end
     end
@@ -192,6 +192,15 @@ function Sefirah:init()
     pcall(function() require("core.newch").start() end)
     -- File de téléchargement : reprend celle de la session précédente, s'il en reste une.
     pcall(function() require("core.dlqueue").init() end)
+    -- v1.4.1 : les chapitres Novelfire téléchargés avant la correction contiennent « Could not
+    -- extract chapter content » : on les efface une seule fois (romans et progression conservés).
+    pcall(function()
+        local S = require("sefirah_settings")
+        if not S:get("purged_novelfire_141") then
+            require("core.cache").purgeSource("novelfire")
+            S:set("purged_novelfire_141", true)
+        end
+    end)
     self.ui.menu:registerToMainMenu(self)
     local ok, Dispatcher = pcall(require, "dispatcher")
     if ok and Dispatcher then
@@ -210,7 +219,7 @@ end
 -- Écritures différées (réglages, bibliothèque, progression) : on les force avant la mise en veille
 -- ou la fermeture de KOReader. Pas de « return true » : l'évènement continue vers les autres plugins.
 local function flush_all()
-    pcall(function() require("settings").flushNow() end)
+    pcall(function() require("sefirah_settings").flushNow() end)
     pcall(function() require("core.db").flush() end)
     pcall(function() require("core.cache").flush() end)
 end

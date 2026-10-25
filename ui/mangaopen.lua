@@ -11,7 +11,7 @@ local InfoMessage = require("ui/widget/infomessage")
 -- Boîte avec bouton « Annuler » : selon la version de KOReader ; repli sans bouton.
 local ok_bd, ButtonDialogTitle = pcall(require, "ui/widget/buttondialogtitle")
 if not ok_bd then ok_bd, ButtonDialogTitle = pcall(require, "ui/widget/buttondialog") end
-local Settings   = require("settings")
+local Settings   = require("sefirah_settings")
 local Online      = require("core.online")
 local logger     = require("logger")
 local T          = require("core.i18n").T

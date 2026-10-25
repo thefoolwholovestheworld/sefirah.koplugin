@@ -4,7 +4,7 @@
 
 -- core/newch.lua — alertes « nouveau chapitre » pour les romans favoris.
 --
--- Réglages (settings.lua) :
+-- Réglages (sefirah_settings.lua) :
 --   newch_mode   "ask" (défaut : demande à chaque ajout aux favoris, sauf
 --                case « ne plus demander ») | "all" (tous les romans) | "none"
 --   newch_novels table  id → { notify = bool, no_ask = bool }  (par roman)
@@ -25,7 +25,7 @@ local FIRST_DELAY  = 90          -- 1re vérification, 90 s après le démarrage
 local TICK         = 10 * 60     -- un roman vérifié toutes les 10 min au plus
 local PER_NOVEL    = 3 * 3600    -- chaque roman est revérifié au plus toutes les 3 h
 
-local function Settings() return require("settings") end
+local function Settings() return require("sefirah_settings") end
 local function DB()       return require("core.db") end
 
 local function novel_key(source_id, path)

@@ -4,7 +4,7 @@
 -- L'état d'origine de KOReader est remémorisé à l'ouverture du plugin et
 -- remis à la fermeture.
 local UIManager = require("ui/uimanager")
-local Settings  = require("settings")
+local Settings  = require("sefirah_settings")
 
 local Night = {}
 local _orig = nil   -- état du mode nuit de KOReader avant l'ouverture de Sefirah

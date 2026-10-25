@@ -2,7 +2,7 @@
 local T = require("core.i18n").T
 local UIManager = require("ui/uimanager")
 local ButtonDialogTitle = require("ui/widget/buttondialogtitle")
-local Settings = require("settings")
+local Settings = require("sefirah_settings")
 
 local Lang = {}
 local dlg

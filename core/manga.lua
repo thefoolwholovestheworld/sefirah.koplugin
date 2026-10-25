@@ -162,15 +162,25 @@ end
 -- ── Téléchargement par vagues ────────────────────────────────────────────────
 -- Écrit dans « .part » puis renomme : un sous-processus tué au timeout ne laisse
 -- jamais une image tronquée qui passerait pour une page complète à la reprise.
-local function download_one(url, dest, headers)
+local function download_one(url, dest, headers, try_timeout, pace)
     local part = dest .. ".part"
-    for _ = 1, 2 do
-        local ok = Http.download(url, part, TRY_TIMEOUT, headers)
+    -- Source qui demande de ménager son serveur (pace) : 3 essais, et pause plus longue si le serveur
+    -- répond « trop de requêtes » (429 / 503, ex. Cloudflare 1015) au lieu de réessayer aussitôt.
+    local attempts = pace and 3 or 2
+    for n = 1, attempts do
+        local ok, code = Http.download(url, part, try_timeout or TRY_TIMEOUT, headers)
         if ok and file_size(part) >= MIN_BYTES then
             os.remove(dest)
-            if os.rename(part, dest) then return true end
+            if os.rename(part, dest) then
+                if pace then pcall(function() require("socket").sleep(pace) end) end
+                return true
+            end
         end
         os.remove(part)
+        if pace and n < attempts then
+            local wait = (code == 429 or code == 503) and (6 * n) or 1
+            pcall(function() require("socket").sleep(wait) end)
+        end
     end
     return false
 end
@@ -180,8 +190,9 @@ end
 -- done(aborted) : aborted = true si `cancelled()` a coupé la boucle.
 local BATCH_WIDTH = 10   -- connexions simultanées en mode « batch » (plusieurs images par connexion)
 
-local function run_waves(items, todo, on_progress, done_count, total, done, cancelled, wave_size, on_tail, batch)
+local function run_waves(items, todo, on_progress, done_count, total, done, cancelled, wave_size, on_tail, batch, try_timeout, pace)
     wave_size = wave_size or WAVE
+    try_timeout = try_timeout or TRY_TIMEOUT
     local socket = require("socket")
 
     -- Mode « batch » (source qui le demande, 1re passe seulement) : chaque sous-processus
@@ -205,7 +216,7 @@ local function run_waves(items, todo, on_progress, done_count, total, done, canc
                 for _, idx in ipairs(grp) do
                     list[#list + 1] = { url = items[idx].url, dest = items[idx].path .. ".part", idx = idx }
                 end
-                Http.download_many(list, TRY_TIMEOUT, items[grp[1]].headers, function(k, ok)
+                Http.download_many(list, try_timeout, items[grp[1]].headers, function(k, ok)
                     local e = list[k]
                     if ok and file_size(e.dest) >= MIN_BYTES then
                         os.remove(items[e.idx].path)
@@ -219,7 +230,7 @@ local function run_waves(items, todo, on_progress, done_count, total, done, canc
     else
         for _, idx in ipairs(todo) do
             local it = items[idx]
-            jobs[#jobs + 1] = function() download_one(it.url, it.path, it.headers) end
+            jobs[#jobs + 1] = function() download_one(it.url, it.path, it.headers, try_timeout, pace) end
         end
     end
 
@@ -246,9 +257,10 @@ local function run_waves(items, todo, on_progress, done_count, total, done, canc
         progress(n)
     end
 
-    local job_timeout = JOB_TIMEOUT
+    local job_timeout = try_timeout * 2 + (JOB_TIMEOUT - TRY_TIMEOUT * 2)   -- 2 essais + marge (40 s par défaut)
+    if pace then job_timeout = try_timeout * 3 + 40 end                      -- 3 essais + pauses d'attente
     if batch_mode then
-        job_timeout = math.min(900, JOB_TIMEOUT * math.ceil(#todo / workers))
+        job_timeout = math.min(900, job_timeout * math.ceil(#todo / workers))
     end
 
     local started = Parallel.pool(jobs, math.max(wave_size, batch_mode and workers or 0),
@@ -268,7 +280,7 @@ local function run_waves(items, todo, on_progress, done_count, total, done, canc
     for k, idx in ipairs(todo) do
         if cancelled and cancelled() then return done(true) end
         local it = items[idx]
-        download_one(it.url, it.path, it.headers)
+        download_one(it.url, it.path, it.headers, try_timeout, pace)
         progress(k)
     end
     done(false)
@@ -444,8 +456,16 @@ function Manga.download(opts)
     -- Dossier temporaire STABLE (pas vidé au départ) : reprise d'un téléchargement
     -- interrompu. Les pages sont reconnues par leur numéro, pas par leur URL
     -- (le serveur d'images MangaDex change d'un essai à l'autre).
-    local tmp = dir .. "/.tmp_" .. safe_name(string.format("%04d_%s", tonumber(opts.index) or 0, tostring(chapter.path):sub(-20)), "x")
+    local tmp = dir .. "/.tmp_" .. safe_name(string.format("%04d_%s", tonumber(opts.index) or 0, tostring(res.tag or chapter.path):sub(-20)), "x")
     if not mkdirs(tmp) then return on_done(false, "mkdir_failed") end
+
+    -- L'extension peut demander moins de connexions simultanées et des essais plus longs (MangaBall).
+    local wave = opts.wave or WAVE
+    if tonumber(res.wave) and tonumber(res.wave) > 0 then wave = math.min(wave, tonumber(res.wave)) end
+    local try_timeout = tonumber(res.try_timeout)
+    local pace = tonumber(res.pace)   -- pause (s) après chaque image : évite la limite de débit du serveur
+    -- Réglages d'une 2e passe plus prudente (pages ratées de la 1re passe) : permet une 1re passe rapide.
+    local slow = type(res.slow) == "table" and res.slow or nil
 
     local items, todo, have = {}, {}, 0
     for i, url in ipairs(res.images) do
@@ -507,13 +527,25 @@ function Manga.download(opts)
         logger.warn("Sefirah/Manga:", #missing, "pages manquantes, nouvel essai")
         run_waves(items, missing, nil, 0, #missing, function(aborted2)
             if aborted2 then return finish(false, "cancelled") end
-            if #count_missing() > 0 then return finish(false, "missing_pages") end
+            local still = count_missing()
+            if #still > 0 then
+                -- Laisse l'extension noter pourquoi (code HTTP du serveur d'images).
+                if ext.onDownloadFailed then
+                    local urls = {}
+                    for _, i in ipairs(still) do urls[#urls + 1] = items[i].url end
+                    pcall(ext.onDownloadFailed, ext, { missing = urls, total = #items, chapter = chapter.name })
+                end
+                return finish(false, "missing_pages")
+            end
             assemble()
-        end, cancelled, math.max(2, math.floor((opts.wave or WAVE) / 2)))
+        end, cancelled,
+            slow and tonumber(slow.wave) or math.max(2, math.floor(wave / 2)), nil, nil,
+            slow and tonumber(slow.try_timeout) or try_timeout,
+            slow and tonumber(slow.pace) or pace)
     end
 
     if #todo == 0 then return assemble() end
-    run_waves(items, todo, opts.on_progress, have, total, on_first_pass, cancelled, opts.wave, fire_tail, res.batch)
+    run_waves(items, todo, opts.on_progress, have, total, on_first_pass, cancelled, wave, fire_tail, res.batch, try_timeout, pace)
 end
 
 -- ── Espace disque (étape 11) ─────────────────────────────────────────────────
@@ -521,7 +553,7 @@ end
 -- `keep` (chemin) n'est jamais supprimé (le chapitre qu'on vient de créer).
 function Manga.enforceLimit(max_mb, keep)
     if not max_mb then
-        local ok_s, Settings = pcall(require, "settings")
+        local ok_s, Settings = pcall(require, "sefirah_settings")
         max_mb = ok_s and tonumber(Settings:get("manga_max_mb")) or 1000
     end
     if max_mb <= 0 then return end   -- 0 = illimité

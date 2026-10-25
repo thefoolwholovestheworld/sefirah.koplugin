@@ -2,7 +2,7 @@
 -- Les scores restent locaux hors ligne ; les XP en attente sont envoyés par lots
 -- idempotents lorsque l'utilisateur ouvre le classement ou demande une actualisation.
 -- Important : l'identifiant local n'est pas une preuve cryptographique d'identité.
-local Settings = require("settings")
+local Settings = require("sefirah_settings")
 local UIManager = require("ui/uimanager")
 local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
@@ -61,8 +61,8 @@ local API_ERRORS = {
     banned             = "Ce compte a été bloqué par le serveur.",
     not_found          = "Le serveur n'est pas à jour : redéploie worker.js pour activer les amis.",
 }
-local function request(method, path, payload)
-    local root = base_url()
+local function request(method, path, payload, root_override)
+    local root = root_override or base_url()
     if root == "" then return nil, T("Configure d'abord l'URL du serveur.") end
     if not root:match("^https?://") then return nil, T("L'URL doit commencer par https:// ou http://.") end
     local body = payload and JSON.encode(payload) or nil
@@ -505,7 +505,7 @@ function Leaderboard.makeRows(PANEL, redraw)
         for i, player in ipairs(cache.players) do
             if i > 20 then break end
             local name = tostring(player.username or player.pseudo or "Lecteur")
-            local level = math.max(1, tonumber(player.level) or (math.floor((tonumber(player.xp) or 0) / 250) + 1))
+            local level = math.max(1, tonumber(player.level) or require("core.progression").level(player.xp))
             local xp = math.max(0, tonumber(player.xp) or 0)
             rows[#rows + 1] = PANEL.makeRow(string.format("%02d. %s  ·  Niv. %d", i, name, level), { trailing = tostring(xp) .. " XP", height = PANEL.ROW_H + 2 })
         end
@@ -528,6 +528,26 @@ function Leaderboard.makeRows(PANEL, redraw)
     rows[#rows + 1] = PANEL.makeRow("Consultations en attente : " .. tostring(#(progress_data().pending_work_events or {})), { dim = true })
     rows[#rows + 1] = PANEL.makeRow("Les données se synchronisent lors de l'actualisation avec un serveur configuré.", { dim = true, height = PANEL.ROW_H + 8 })
     return rows
+end
+
+-- Routes sociales distinctes de l'API du classement.
+function Leaderboard.socialRequest(route, payload, root)
+    local allowed = {
+        ["feed/list"] = true, ["post/create"] = true, ["post/like"] = true,
+        ["comment/list"] = true, ["comment/create"] = true,
+        ["conversations/list"] = true, ["messages/list"] = true, ["messages/send"] = true,
+    }
+    route = tostring(route or "")
+    if not allowed[route] then return nil, T("Route sociale inconnue.") end
+    root = trim(root or ""):gsub("/+$", "")
+    if not root:match("^https://[%w%.%-]+$") then
+        return nil, T("Le serveur social doit être une URL HTTPS sans chemin.")
+    end
+    local username = trim(Settings:get("leaderboard_username"))
+    if username == "" then return nil, T("Choisis d'abord un pseudo public.") end
+    payload = type(payload) == "table" and payload or {}
+    payload.player_id, payload.player_token, payload.username = player_id(), player_token(), username
+    return request("POST", "/api/social/" .. route, payload, root)
 end
 
 return Leaderboard

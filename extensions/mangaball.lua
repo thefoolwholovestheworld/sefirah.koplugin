@@ -34,6 +34,9 @@ local T      = require("core.i18n").T
 -- à la place des vraies couvertures (cdn_mangadex refuse le hotlink). Le cache n'est jamais
 -- réécrit s'il existe déjà : on le vide UNE fois pour que les bonnes couvertures se retéléchargent.
 pcall(function() require("core.db").purgeCoverCacheOnce("mangaball", "covers_v6") end)
+-- Les listes de chapitres en cache gardent l'ancien choix de traduction (mangadot / groupe « Ho-oh »,
+-- qui sert un autre manga sur Code Geass ch. 1-2) : on les vide UNE fois.
+pcall(function() require("core.db").purgeChapterCacheOnce("mangaball", "chapters_v8") end)
 
 local BASE = "https://mangaball.com"
 local API  = "https://api.mangaball.com/api/v1"
@@ -73,14 +76,19 @@ local function url_encode(str)
     return (tostring(str):gsub("([^%w%-%.%_%~])", function(c) return string.format("%%%02X", c:byte()) end))
 end
 
+local LOG_RING = {}   -- dernières entrées du journal (le fichier est réécrit en entier à chaque ajout)
 local function dump_error(label, body)
     pcall(function()
         local DataStorage = require("datastorage")
         local dir = DataStorage:getSettingsDir() .. "/sefirah"
         local ok_lfs, lfs = pcall(require, "libs/libkoreader-lfs")
         if ok_lfs and lfs then pcall(lfs.mkdir, dir) end
+        local entry = os.date("%H:%M:%S") .. "  " .. tostring(label)
+        if body and tostring(body) ~= "" then entry = entry .. "\n" .. tostring(body):sub(1, 3000) end
+        LOG_RING[#LOG_RING + 1] = entry
+        while #LOG_RING > 12 do table.remove(LOG_RING, 1) end
         local f = io.open(dir .. "/mangaball_last_error.txt", "wb")
-        if f then f:write(label .. "\n\n" .. tostring(body):sub(1, 200000)); f:close() end
+        if f then f:write(table.concat(LOG_RING, "\n\n--------\n\n")); f:close() end
     end)
 end
 
@@ -165,35 +173,47 @@ end
 -- Champs inconnus de l'API de recherche : on teste tous les noms plausibles + les étiquettes + le
 -- titre (« [H] … » = hentai sur ce site). Le 1er résultat brut est noté dans mangaball_last_error.txt
 -- pour pouvoir affiner si un titre adulte passe encore.
-local ADULT_TAGS = { hentai = true, smut = true, erotica = true, pornographic = true, adult = true,
-    ["sexual violence"] = true, ["18+"] = true, nsfw = true, doujinshi_adult = true }
+local ADULT_TAGS = {
+    hentai = true, smut = true, erotica = true, pornographic = true, adult = true,
+    mature = true, mature17 = true, explicit = true, nsfw = true, r18 = true, r18plus = true,
+    ecchi = true, sexualviolence = true, sexualcontent = true, adultcontent = true,
+    loli = true, shota = true,
+}
 
 local function is_adult_title(name)
-    name = tostring(name or "")
-    if name:match("^%s*[%[%(]%s*[Hh]%s*[%]%)]") then return true end
-    local l = name:lower()
-    return l:find("[18+]", 1, true) or l:find("(18+)", 1, true) or l:find("(adult)", 1, true)
-        or l:find("[adult]", 1, true) or false
+    local l = tostring(name or ""):lower()
+    if l:match("^%s*[%[%(]%s*h%s*[%]%)]") then return true end
+    if l:find("18+", 1, true) or l:find("r-18", 1, true) or l:find("r18", 1, true) then return true end
+    for _, word in ipairs({ "adult", "mature", "hentai", "smut", "erotica", "pornographic", "explicit", "nsfw", "ecchi" }) do
+        if l:find("%f[%w]" .. word .. "%f[%W]") then return true end
+    end
+    return false
 end
 
 local function is_adult(it)
     if type(it) ~= "table" then return false end
     for _, k in ipairs({ "is18plus", "is18Plus", "is_18plus", "isAdult", "is_adult", "adult", "nsfw",
-        "is_nsfw", "isNsfw", "is18", "r18", "is_r18" }) do
+        "is_nsfw", "isNsfw", "is18", "r18", "is_r18", "explicit" }) do
         local v = it[k]
-        if v == true or v == 1 or v == "true" or v == "1" then return true end
+        if v == true or v == 1 or v == "true" or v == "1" or v == "yes" then return true end
     end
-    for _, k in ipairs({ "contentRating", "content_rating", "rating_type", "ageRating", "age_rating" }) do
-        local v = tostring(it[k] or ""):lower()
-        if v == "erotica" or v == "pornographic" or v == "adult" or v == "18+" or v == "nsfw" then return true end
+    for _, k in ipairs({ "contentRating", "content_rating", "rating_type", "ageRating", "age_rating",
+        "rating", "contentWarning", "content_warning" }) do
+        local raw = it[k]
+        local v = tostring(raw or ""):lower():gsub("[%s%p_]+", "")
+        if ADULT_TAGS[v] or v == "18plus" or v == "17plus" or v == "mature17plus" then return true end
+        local age = tonumber(raw)
+        if age and age >= 18 then return true end
     end
     if type(it.tags) == "table" then
         for _, t in ipairs(it.tags) do
-            local nm = type(t) == "table" and t.name or t
-            if ADULT_TAGS[tostring(nm or ""):lower()] then return true end
+            local nm = type(t) == "table" and (t.name or t.label or t.slug) or t
+            local key = tostring(nm or ""):lower():gsub("[%s%p_]+", "")
+            if ADULT_TAGS[key] then return true end
+            if type(t) == "table" and (t.adult == true or t.isAdult == true or t.is_adult == true) then return true end
         end
     end
-    return is_adult_title(it.name) and true or false
+    return is_adult_title(it.name)
 end
 
 -- Normalisation pour comparer titres et mot cherché (minuscules, sans ponctuation).
@@ -290,7 +310,7 @@ local function opt(id, label) return { id = id, label = label } end
 local function nkey(s) return (tostring(s or ""):lower():gsub("[^%w]", "")) end
 
 local function settings_get(k)
-    local ok, S = pcall(require, "settings")
+    local ok, S = pcall(require, "sefirah_settings")
     if ok and type(S) == "table" and S.get then
         local ok2, v = pcall(S.get, S, k)
         if ok2 then return v end
@@ -299,7 +319,7 @@ local function settings_get(k)
 end
 
 local function settings_set(k, v)
-    local ok, S = pcall(require, "settings")
+    local ok, S = pcall(require, "sefirah_settings")
     if ok and type(S) == "table" and S.set then pcall(S.set, S, k, v) end
 end
 
@@ -451,7 +471,7 @@ local ext = {
     name    = "MangaBall",
     site    = BASE,
     lang    = "multi",
-    version = "0.6.1",
+    version = "0.6.3",
     type    = "manga",
     popularFilters = FILTERS,
     searchFilters = FILTERS,
@@ -1016,7 +1036,7 @@ local function post_filter(items, f)
     local any_mode = f.tagmode == "OR"
     local out = {}
     for _, it in ipairs(items) do
-        local keep = type(it) == "table"
+        local keep = type(it) == "table" and not is_adult(it)
         if keep and f.origin and ORIGIN[f.origin] and type(it.originalLanguage) == "string"
             and it.originalLanguage ~= ORIGIN[f.origin].lang then keep = false end
         if keep and f.demo and DEMO_OK[f.demo]
@@ -1153,7 +1173,8 @@ function ext:popularNovels(page, options)
         if has_filters(f) then
             return { novels = {}, error = T("MangaBall injoignable (filtres). Voir sefirah/mangaball_last_error.txt") }
         end
-        return html_popular(page, lang)   -- repli : ancienne liste « nouveautés » (sans filtres)
+        -- Pas de repli HTML : il n'expose pas les champs de classification 18+.
+        return { novels = {}, error = T("MangaBall : catalogue indisponible ; liste masquée par sécurité.") }
     end
     if #data.data == 0 then return { novels = {} } end
     local items = post_filter(data.data, f)
@@ -1176,10 +1197,9 @@ function ext:searchNovels(term, page, options)
 
     -- Avec des filtres : recherche avancée (mot cherché + filtres) ; sans : recherche simple d'origine.
     local function build(param)
-        if filtered then
-            return adv_url(adv_params(f, page), { param .. "=" .. url_encode(term) })
-        end
-        return search_url(param, term, page)
+        -- Même la recherche simple doit passer par l'API avancée : adult_mode=no_18
+        -- y est ajouté systématiquement par base_params().
+        return adv_url(adv_params(f, page), { param .. "=" .. url_encode(term) })
     end
 
     local remembered = filtered and adv_search_param or search_param
@@ -1305,9 +1325,14 @@ local LAST_API = {}           -- « id|langue » → { n = total API, t = heure 
 
 -- Fiabilité des hébergeurs : « comick » est servi derrière une protection Cloudflare (page
 -- « Just a moment… », HTTP 403) que la liseuse ne peut pas passer → on le prend en DERNIER recours.
+-- « mangadot » passe en dernier recours : sur certaines séries (ex. Code Geass, chapitres 1-2 et 4) il
+-- renvoie les pages d'un AUTRE manga rangé sous le bon identifiant (57 pages au lieu de 25-29), et le
+-- contrôle d'identifiant de série ne peut pas le voir. mangadex / mangakatana passent avant.
 local function site_rank(site)
     site = tostring(site or ""):lower()
-    if site == "mangadot" then return 0 end
+    if site == "mangadex" then return 0 end
+    if site == "mangakatana" then return 1 end
+    if site == "mangadot" then return 8 end   -- groupe « Ho-oh » : dernier recours (choisissable à la main)
     if site == "comick" then return 9 end
     return 5
 end
@@ -1337,7 +1362,9 @@ local function is_volume_release(r)
     if nm:find("tome", 1, true) or nm:find("volume", 1, true) or nm:find("vol%.") or nm:find("book", 1, true) then
         return true
     end
-    return (tonumber(r.volume) or 0) > 0
+    -- Le champ « volume » de MangaBall est le tome qui contient le chapitre (mangadex : 1, 2, 3…), pas
+    -- un signe de tome complet : il ne doit pas pénaliser la traduction.
+    return false
 end
 local function rel_rank(r) return site_rank(r.site) + (is_volume_release(r) and 20 or 0) end
 
@@ -1704,6 +1731,20 @@ local HDRS = { ["User-Agent"] = UA, ["Referer"] = BASE .. "/",
     ["Accept"] = "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
     ["Accept-Language"] = "en-US,en;q=0.8" }
 
+-- Une image n'est acceptée que si son chemin identifie exactement la série, le chapitre,
+-- le site et la langue demandés. Cela évite qu'une page hydratée mélange des séries/chapitres.
+local function belongs_to_release(u, cid, num, tid, vol, site, lang)
+    if not (cid and cid ~= "" and tid and tid ~= "" and site and site ~= "" and lang and lang ~= "") then return false end
+    local p_tid, p_vol, p_num, p_site, p_lang, filename = tostring(u):match(
+        "/storage/([^/]+)/([^/]+)/([^/]+)/([^/]+)/([^/]+)/([^/?#]+)")
+    if not p_tid then return false end
+    if p_tid ~= tid or p_site ~= site or p_lang ~= lang then return false end
+    if vol and vol ~= "" and p_vol ~= vol then return false end
+    if num and num ~= "" and p_num ~= num then return false end
+    if filename:sub(1, #cid) ~= cid or filename:sub(#cid + 1, #cid + 1) ~= "-" then return false end
+    return true
+end
+
 -- Charge les adresses d'images d'UNE traduction. Renvoie images, html (ou nil, raison).
 local function load_release(cid, num, tid, vol, site, lang)
     local html = get_html("/chapter-detail/" .. cid .. "?chapter=" .. tostring(num or ""))
@@ -1737,17 +1778,20 @@ local function load_release(cid, num, tid, vol, site, lang)
     if #images == 0 then   -- JSON embarqué (Next.js)
         for u in flat:gmatch('https?://[%w%.%-]+/storage/[^"\'%s\\<>]-%-%d+%.%w+') do add(u) end
     end
-    -- Garde-fou : le nom d'une image contient l'id du chapitre (« <id>-001.webp »). La page peut
-    -- embarquer aussi les images d'un AUTRE chapitre (suivant, précédent, « reprendre la lecture »…) :
-    -- on ne garde que celles qui appartiennent au chapitre demandé.
-    if cid and cid ~= "" and #images > 0 then
-        local mine = {}
+    -- Garde-fou fail-closed : vérifier l'identifiant de série ET le chemin complet de la version.
+    if #images > 0 then
+        local mine, rejected = {}, {}
         for _, u in ipairs(images) do
-            if u:find(cid, 1, true) then mine[#mine + 1] = u end
+            if belongs_to_release(u, cid, num, tid, vol, site, lang) then
+                mine[#mine + 1] = u
+            else
+                rejected[#rejected + 1] = u
+            end
         end
-        if #mine ~= #images then
-            dump_error("images d'un autre chapitre écartées : demandé " .. cid .. " (n° " .. tostring(num)
-                .. "), gardées " .. #mine .. " sur " .. #images .. "\n" .. table.concat(images, "\n"), "")
+        if #rejected > 0 then
+            dump_error("images ne correspondant pas à la série/au chapitre demandés : série " .. tostring(tid)
+                .. ", chapitre " .. tostring(cid) .. " (n° " .. tostring(num) .. "), gardées " .. #mine
+                .. ", rejetées " .. #rejected .. "\n" .. table.concat(rejected, "\n"), "")
         end
         images, seen = mine, {}
         for _, u in ipairs(images) do seen[u] = true end
@@ -1785,16 +1829,113 @@ local function load_release(cid, num, tid, vol, site, lang)
     return images, html
 end
 
--- La 1re image est-elle vraiment téléchargeable ? (Cloudflare renvoie 403 + page « Just a moment »)
-local HOST_OK = {}   -- hébergeur d'images validé pendant la session
-local function first_image_ok(u)
-    local host = tostring(u):match("^https?://[^/]+") or ""
-    if HOST_OK[host] then return true end
+-- Une image est-elle vraiment téléchargeable ? (Cloudflare renvoie 403 + page « Just a moment »,
+-- un hébergeur peut aussi refuser le hotlink). Pas de mémoire par hébergeur : chaque traduction
+-- est vérifiée sur sa 1re ET sa dernière page.
+local function image_ok(u)
     local b, c, e = require("core.net").get(u, { headers = HDRS, timeout = 15, retries = 0 })
-    if b and #b >= 256 and b:sub(1, 1) ~= "<" then HOST_OK[host] = true; return true end
+    if b and #b >= 256 and b:sub(1, 1) ~= "<" then return true end
+    if tostring(c) == "429" then return true end   -- limite de débit du CDN : le serveur répond, ce n'est pas un refus
     dump_error("image injoignable : " .. u .. "\ncode : " .. tostring(c), type(e) == "string" and e or tostring(b or ""):sub(1, 3000))
     return false
 end
+
+-- Hébergeurs fiables (mangadex / mangakatana) : pas de contrôle préalable (il retéléchargeait une
+-- image entière pour rien) ; un échec éventuel est rattrapé par la 2e passe lente du téléchargement.
+-- Les hébergeurs risqués (comick = Cloudflare, mangadot) gardent le contrôle de la 1re page.
+local function release_ok(images, site)
+    if images == nil or #images == 0 then return false end
+    if site_rank(site) <= 1 then return true end
+    return image_ok(images[1])
+end
+
+-- ── Groupe de traduction choisi par l'utilisateur ───────────────────────────
+-- Sur MangaBall, chaque « site » est un groupe : mangadex = Raikou, mangakatana = Tyranitar,
+-- mangadot = Ho-oh. Le choix est gardé par manga (clé = id de la série) et appliqué au
+-- téléchargement : « auto » (vide) = ordre habituel, sinon le groupe choisi passe en premier.
+local SITE_LABEL = {
+    mangadex    = "Raikou (MangaDex)",
+    mangakatana = "Tyranitar (MangaKatana)",
+    mangadot    = "Ho-oh (MangaDot)",
+}
+local function site_label(site)
+    site = tostring(site or ""):lower()
+    return SITE_LABEL[site] or (site:sub(1, 1):upper() .. site:sub(2))
+end
+
+local function group_setting(tid) return "mangaball_group_" .. tostring(tid or "") end
+
+local function group_pref(tid)
+    local v = settings_get(group_setting(tid))
+    return type(v) == "string" and v or ""
+end
+
+local function tid_of(novel_path)
+    return tostring(novel_path or ""):match("^(%x+)")
+end
+
+-- Groupes disponibles d'après les chapitres déjà chargés (chaque chemin de chapitre contient sa
+-- traduction principale + les autres). Renvoie { { id, label, count } } trié par nom.
+function ext:listGroups(chapters)
+    local count, order = {}, {}
+    local function note(site)
+        site = tostring(site or ""):lower()
+        if site == "" then return end
+        if not count[site] then count[site] = 0; order[#order + 1] = site end
+        count[site] = count[site] + 1
+    end
+    for _, ch in ipairs(chapters or {}) do
+        local f = {}
+        for part in (tostring(ch.path or "") .. "|"):gmatch("([^|]*)|") do f[#f + 1] = part end
+        note(f[4])
+        for item in (f[6] or ""):gmatch("[^;]+") do
+            local _, _, s = item:match("^(%x+)~([^~]*)~([^~]*)~([^~]*)$")
+            note(s)
+        end
+    end
+    table.sort(order, function(a, b) return site_label(a):lower() < site_label(b):lower() end)
+    local out = {}
+    for _, site in ipairs(order) do out[#out + 1] = { id = site, label = site_label(site), count = count[site] } end
+    return out
+end
+
+function ext:getGroup(novel_path)
+    local tid = tid_of(novel_path)
+    if not tid then return "" end
+    return group_pref(tid)
+end
+
+function ext:setGroup(novel_path, site)
+    local tid = tid_of(novel_path)
+    if not tid then return false end
+    settings_set(group_setting(tid), site or "")
+    return true
+end
+
+function ext:groupLabel(site) return site_label(site) end
+
+-- Appelé par core/manga.lua quand des pages restent introuvables : on note pourquoi (code HTTP du
+-- serveur d'images) dans sefirah/mangaball_last_error.txt.
+function ext:onDownloadFailed(info)
+    pcall(function()
+        info = info or {}
+        local lines = { "téléchargement incomplet : " .. tostring(info.missing and #info.missing or "?")
+            .. " page(s) sur " .. tostring(info.total) .. " — chapitre " .. tostring(info.chapter) }
+        for k, u in ipairs(info.missing or {}) do
+            if k > 4 then break end
+            local b, c, e = require("core.net").get(u, { headers = HDRS, timeout = 15, retries = 0 })
+            lines[#lines + 1] = "  " .. u .. "\n    → " .. (b and (#b .. " octets, début : " .. tostring(b):sub(1, 60):gsub("[%c]", " "))
+                or ("échec, code " .. tostring(c)))
+            if type(e) == "string" then lines[#lines + 1] = "    " .. e:sub(1, 300) end
+        end
+        dump_error(table.concat(lines, "\n"), "")
+    end)
+end
+
+-- 1re passe RAPIDE (8 images à la fois, pause courte) ; seules les pages ratées (limite de débit du
+-- CDN, 429/403) repassent en mode LENT (2 à la fois, pause 0,6 s) — l'ancien réglage appliqué à tout.
+local FAST = { wave = 8, try_timeout = 20, pace = 0.1 }
+local SLOW = { wave = 2, try_timeout = 30, pace = 0.6 }
 
 function ext:parseChapterImages(path)
     path = tostring(path)
@@ -1803,36 +1944,51 @@ function ext:parseChapterImages(path)
     local cid, num = (f[1] or ""):match("^(%x+)%?chapter=(.*)$")
     cid = cid or (f[1] or ""):match("^(%x+)")
     local tid, vol, site, lang = f[2] or "", f[3] or "", f[4] or "", f[5] or ""
-    -- Traductions de remplacement (autres hébergeurs du même numéro), ajoutées au chargement de la fiche.
-    local alts = {}
+    -- Toutes les traductions de ce numéro : la principale d'abord, puis les autres hébergeurs.
+    local cands = { { id = cid, vol = vol, site = site, lang = lang } }
     for item in (f[6] or ""):gmatch("[^;]+") do
         local id, v, s, l = item:match("^(%x+)~([^~]*)~([^~]*)~([^~]*)$")
-        if id then alts[#alts + 1] = { id = id, vol = v, site = s, lang = l } end
+        if id then cands[#cands + 1] = { id = id, vol = v, site = s, lang = l } end
     end
-    local images, why = load_release(cid, num, tid, vol, site, lang)
-    if not images then return nil, why end
-    -- Un chapitre de plus de 40 pages est suspect (tome complet publié comme chapitre) : on regarde les
-    -- autres traductions du même numéro et on garde la plus courte. Le détail est noté dans
-    -- sefirah/mangaball_last_error.txt pour pouvoir vérifier la règle.
-    if #alts > 0 and #images > 40 then
-        local log = { "chapitre " .. tostring(num) .. " : " .. cid .. " (" .. site .. ") = " .. #images .. " pages" }
-        local best, best_n = nil, #images
-        for _, a in ipairs(alts) do
-            local imgs = load_release(a.id, num, tid, a.vol, a.site, a.lang)
-            log[#log + 1] = "  autre : " .. a.id .. " (" .. tostring(a.site) .. ") = " .. (imgs and #imgs or "échec") .. " pages"
-            if imgs and #imgs < best_n and first_image_ok(imgs[1]) then best, best_n = imgs, #imgs end
+    -- Groupe choisi par l'utilisateur : ses traductions passent devant (ordre d'origine conservé).
+    local pref = group_pref(tid)
+    if pref ~= "" then
+        local first, rest = {}, {}
+        for _, c in ipairs(cands) do
+            if tostring(c.site):lower() == pref then first[#first + 1] = c else rest[#rest + 1] = c end
         end
-        if best then images = best end
-        dump_error(table.concat(log, "\n"), "")
-    end
-    -- Si l'hébergeur principal est bloqué (Cloudflare), on tente les autres traductions du chapitre.
-    if #alts > 0 and not first_image_ok(images[1]) then
-        for _, a in ipairs(alts) do
-            local imgs = load_release(a.id, num, tid, a.vol, a.site, a.lang)
-            if imgs and first_image_ok(imgs[1]) then images = imgs; break end
+        if #first > 0 then
+            cands = {}
+            for _, c in ipairs(first) do cands[#cands + 1] = c end
+            for _, c in ipairs(rest) do cands[#cands + 1] = c end
         end
     end
-    return { images = images, headers = HDRS }
+
+    local log = { "chapitre " .. tostring(num) .. " (groupe choisi : " .. (pref ~= "" and pref or "auto") .. ")" }
+    local fallback, fallback_tag   -- 1re traduction chargée, gardée si aucune n'est vérifiée
+    local last_why = "no_pages"
+    for n, c in ipairs(cands) do
+        local imgs, why = load_release(c.id, num, tid, c.vol, c.site, c.lang)
+        if not imgs then
+            last_why = why or last_why
+            log[#log + 1] = "  " .. c.id .. " (" .. tostring(c.site) .. ") : illisible (" .. tostring(why) .. ")"
+        else
+            -- Un chapitre de plus de 40 pages est suspect (tome complet publié comme chapitre) : en mode
+            -- auto on le garde seulement si aucune autre traduction n'est plus courte.
+            local suspect = pref == "" and #imgs > 40 and n < #cands
+            local ok = (not suspect) and release_ok(imgs, c.site)
+            log[#log + 1] = "  " .. c.id .. " (" .. tostring(c.site) .. ") = " .. #imgs .. " pages"
+                .. (suspect and " [suspect, trop long]" or (ok and " [ok]" or " [images injoignables]"))
+            if ok then
+                dump_error(table.concat(log, "\n"), "")
+                return { images = imgs, headers = HDRS, wave = FAST.wave, try_timeout = FAST.try_timeout, pace = FAST.pace, slow = SLOW, tag = c.id }
+            end
+            if not fallback then fallback, fallback_tag = imgs, c.id end
+        end
+    end
+    dump_error(table.concat(log, "\n"), "")
+    if fallback then return { images = fallback, headers = HDRS, wave = FAST.wave, try_timeout = FAST.try_timeout, pace = FAST.pace, slow = SLOW, tag = fallback_tag } end
+    return nil, last_why
 end
 
 function ext:parseChapter(path)

@@ -9,7 +9,7 @@ local UIManager   = require("ui/uimanager")
 local ConfirmBox  = require("ui/widget/confirmbox")
 local InputDialog = require("ui/widget/inputdialog")
 local ExtMgr      = require("core.extmgr")
-local Settings    = require("settings")
+local Settings    = require("sefirah_settings")
 local P           = require("ui.panel")
 local LangFilter  = require("ui.lang_filter")
 
