@@ -36,85 +36,88 @@ local function shuffle(list, rand)
         list[i], list[j] = list[j], list[i]
     end
 end
+-- Quêtes du jour / de la semaine : 10 par période, réparties sur 5 paliers de difficulté
+-- (25, 50, 100, 200, 500 XP). Plus le niveau monte, plus les paliers difficiles sont nombreux
+-- et plus les objectifs grandissent. Pages et minutes : toujours des multiples de 5.
+local XP_TIERS = { 25, 50, 100, 200, 500 }
+
+-- Paliers (1 à 5) des 10 quêtes selon le niveau, triés du plus facile au plus difficile.
+-- Avec 5 familles, chaque famille reçoit 2 quêtes de paliers toujours différents.
+local function tiers_for(level)
+    if level < 5 then return { 1, 1, 1, 2, 2, 2, 3, 3, 3, 4 } end
+    if level < 10 then return { 1, 1, 2, 2, 3, 3, 3, 4, 4, 5 } end
+    if level < 20 then return { 1, 2, 2, 3, 3, 4, 4, 4, 5, 5 } end
+    return { 2, 2, 3, 3, 4, 4, 5, 5, 5, 5 }
+end
+
+local function round5(v) return math.max(5, 5 * math.floor(v / 5 + 0.5)) end
+
 local function make(period, c, level, seed)
     local rand = rng(seed)
     local daily = period == "daily"
     local p = daily and "daily_" or "weekly_"
     local L = math.max(1, tonumber(level) or 1)
-    local function scale(base, step, cap)
-        return math.min(cap, base + step * (L - 1))
-    end
-    local groups = {}
-    -- Chaque famille offre trois variantes ; objectifs et récompenses varient aussi.
-    local function family(key, icon, titles, metric, base, xp, description)
-        local variants = {}
-        for i, factor in ipairs({ 0.8, 1.2, 1.8 }) do
-            local goal = math.max(i, math.floor(base * factor * rand(90, 115) / 100 + 0.5))
-            local cur = math.max(0, tonumber(c[metric]) or 0)
-            variants[#variants + 1] = {
-                period = period, id = (daily and "rd_" or "rw_") .. key .. "_" .. i,
-                icon = icon, title = T(titles[i]), desc = T(description):format(goal),
-                xp = math.max(1, math.floor(xp * factor * math.min(3, 1 + 0.08 * (L - 1)) + 0.5)),
-                cur = math.min(cur, goal), goal = goal, done = cur >= goal,
-            }
+    local lf = math.min(2.5, 1 + 0.08 * (L - 1))   -- facteur de niveau sur les objectifs
+
+    -- Objectifs des 5 paliers d'une famille : strictement croissants, multiples de 5 si `five`.
+    local function goals(base, mults, cap, five, minimum, scaled)
+        local out, prev = {}, 0
+        for i = 1, 5 do
+            local v = base * mults[i] * (scaled == false and 1 or lf)
+            v = math.min(cap, v)
+            v = five and round5(v) or math.max(1, math.floor(v + 0.5))
+            v = math.max(v, minimum or 1, prev + (five and 5 or 1))
+            out[i], prev = v, v
         end
-        shuffle(variants, rand)
-        groups[#groups + 1] = variants
+        return out
     end
-    family("pages", "book", { "Quelques pages d'évasion", "Voyage entre les lignes", "Le défi des pages" },
-        p .. "pages", daily and scale(10, 4, 120) or scale(40, 20, 700), daily and 25 or 65,
-        daily and "Lire %d pages aujourd'hui" or "Lire %d pages cette semaine")
-    family("chapters", "doc", { "Une histoire avance", "Au prochain chapitre", "Chapitres à la chaîne" },
-        p .. "chapters", daily and scale(1, 0.2, 6) or scale(3, 1, 30), daily and 35 or 70,
-        daily and "Terminer %d chapitre(s) aujourd'hui" or "Terminer %d chapitre(s) cette semaine")
-    family("time", "clock", { "Une pause pour lire", "Du temps pour soi", "Immersion prolongée" },
-        p .. "minutes", daily and scale(5, 2, 60) or scale(20, 10, 420), daily and 30 or 65,
-        daily and "Lire pendant %d minutes aujourd'hui" or "Lire pendant %d minutes cette semaine")
-    family("new", "star", { "À la découverte", "Nouveaux horizons", "Explorateur d'histoires" },
-        p .. "new", daily and scale(1, 0.05, 2) or scale(1, 0.17, 5), daily and 35 or 70,
-        daily and "Commencer %d nouveau(x) titre(s) aujourd'hui" or "Commencer %d nouveau(x) titre(s) cette semaine")
+
+    local families = {}
+    local function family(key, icon, titles, metric, goal_list, description, singular)
+        families[#families + 1] = { key = key, icon = icon, titles = titles, metric = metric,
+            goals = goal_list, desc = description, singular = singular }
+    end
+    local PAGE_M = { 0.4, 0.7, 1, 1.6, 2.4 }
     if daily then
-        family("titles", "book", { "Changer d'univers", "Lectures variées", "La tournée des histoires" },
-            "daily_titles_n", scale(2, 0.125, 4), 30, "Lire dans %d titres différents aujourd'hui")
-        family("focus", "flame", { "Une histoire captivante", "Au cœur d'un récit", "Impossible de décrocher" },
-            "daily_best", scale(8, 3, 80), 30, "Lire %d pages dans un même titre aujourd'hui")
+        family("chapters", "doc", { "Une histoire avance", "Au prochain chapitre", "Chapitres à la chaîne", "Soif d'histoires", "Marathon de chapitres" },
+            "daily_chapters", goals(2, { 1, 1.5, 2, 3, 4.5 }, 25, false, 2), "Terminer %d chapitres aujourd'hui")
+        family("pages", "book", { "Une bonne séance", "Voyage entre les lignes", "Le défi des pages", "Dévoreur de pages", "Journée de lecture" },
+            "daily_pages", goals(25, PAGE_M, 300, true), "Lire %d pages aujourd'hui")
+        family("time", "clock", { "Une vraie pause lecture", "Du temps pour soi", "Immersion prolongée", "Plongée profonde", "Journée immergée" },
+            "daily_minutes", goals(20, { 0.5, 0.75, 1, 1.75, 2.75 }, 150, true), "Lire pendant %d minutes aujourd'hui")
+        family("focus", "flame", { "Une histoire captivante", "Au cœur d'un récit", "Impossible de décrocher", "Fidèle à un récit", "Dévoré d'une traite" },
+            "daily_best", goals(20, PAGE_M, 250, true), "Lire %d pages dans un même titre aujourd'hui")
+        family("new", "star", { "À la découverte", "Nouveaux horizons", "Explorateur d'histoires", "Grand explorateur", "Chasseur de pépites" },
+            "daily_new", goals(1, { 1, 2, 3, 4, 5 }, 5, false, 1, false), "Commencer %d nouveaux titres aujourd'hui",
+            "Commencer %d nouveau titre aujourd'hui")
     else
-        local variants = {}
-        local goals = { 3, 5, 7 }
-        for i, goal in ipairs(goals) do
-            variants[i] = { period = period, id = "rw_days_" .. i, icon = "calendar",
-                title = T(({ "Le rendez-vous lecture", "Une semaine de lecteur", "Tous les jours une histoire" })[i]),
-                desc = T("Lire %d jours cette semaine"):format(goal), xp = 40 + goal * 10,
-                cur = math.min(c.weekly_days or 0, goal), goal = goal, done = (c.weekly_days or 0) >= goal }
-        end
-        shuffle(variants, rand)
-        groups[#groups + 1] = variants
+        family("chapters", "doc", { "Une histoire avance", "Au prochain chapitre", "Chapitres à la chaîne", "Soif d'histoires", "Marathon de chapitres" },
+            "weekly_chapters", goals(8, { 0.5, 0.75, 1, 1.5, 2.2 }, 60, false, 4), "Terminer %d chapitres cette semaine")
+        family("pages", "book", { "Une belle semaine", "Voyage entre les lignes", "Le défi des pages", "Dévoreur de pages", "Semaine de lecture" },
+            "weekly_pages", goals(120, PAGE_M, 1500, true), "Lire %d pages cette semaine")
+        family("time", "clock", { "Du temps pour soi", "Une semaine immergée", "Immersion prolongée", "Plongée profonde", "Semaine d'ermite" },
+            "weekly_minutes", goals(90, { 0.5, 0.75, 1, 1.75, 2.75 }, 600, true), "Lire pendant %d minutes cette semaine")
+        family("new", "star", { "À la découverte", "Nouveaux horizons", "Explorateur d'histoires", "Grand explorateur", "Chasseur de pépites" },
+            "weekly_new", { 1, 2, 3, 5, 8 }, "Commencer %d nouveaux titres cette semaine", "Commencer %d nouveau titre cette semaine")
+        family("days", "calendar", { "Le rendez-vous lecture", "Une semaine de lecteur", "Un jour sur deux", "Presque tous les jours", "Tous les jours une histoire" },
+            "weekly_days", { 1, 2, 3, 5, 7 }, "Lire %d jours cette semaine", "Lire %d jour cette semaine")
     end
-    -- Défis combinés : les deux conditions doivent être satisfaites.
-    local combos = {}
-    for i = 1, 3 do
-        local pages = math.max(1, math.floor((daily and scale(8, 3, 90) or scale(30, 12, 400)) * i))
-        local minutes = math.max(1, math.floor((daily and scale(4, 1, 40) or scale(15, 5, 180)) * i))
-        local cur = math.min(tonumber(c[p .. "pages"]) or 0, pages) + math.min(tonumber(c[p .. "minutes"]) or 0, minutes)
-        local goal = pages + minutes
-        combos[i] = { period = period, id = (daily and "rd_" or "rw_") .. "combo_" .. i,
-            icon = "star", title = T(({ "Lecture équilibrée", "L'aventure complète", "Le double défi" })[i]),
-            desc = (daily and T("Aujourd'hui : %d pages ET %d minutes de lecture") or T("Cette semaine : %d pages ET %d minutes de lecture")):format(pages, minutes),
-            xp = math.floor((daily and 40 or 90) * i * math.min(3, 1 + 0.08 * (L - 1))),
-            cur = cur, goal = goal, done = cur >= goal }
-    end
-    shuffle(combos, rand)
-    groups[#groups + 1] = combos
-    -- Une première quête par famille, puis un second passage mélangé : jamais plus de deux par famille.
-    shuffle(groups, rand)
+
+    shuffle(families, rand)
+    local tiers = tiers_for(L)
     local selected = {}
-    for _, group in ipairs(groups) do selected[#selected + 1] = group[1] end
-    shuffle(groups, rand)
-    for _, group in ipairs(groups) do
-        if #selected >= 10 then break end
-        selected[#selected + 1] = group[2]
+    for i, tier in ipairs(tiers) do
+        local f = families[(i - 1) % #families + 1]
+        local goal = f.goals[tier]
+        local cur = math.max(0, tonumber(c[f.metric]) or 0)
+        local text = (goal == 1 and f.singular) or f.desc
+        selected[#selected + 1] = {
+            period = period, id = (daily and "rd_" or "rw_") .. f.key .. "_" .. tier,
+            icon = f.icon, title = T(f.titles[tier]), desc = T(text):format(goal),
+            xp = XP_TIERS[tier], tier = tier,
+            cur = math.min(cur, goal), goal = goal, done = cur >= goal,
+        }
     end
-    shuffle(selected, rand)
     return selected
 end
 function RandomQuests.build(c, dlev, wlev, d)

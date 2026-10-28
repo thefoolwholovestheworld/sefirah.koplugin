@@ -23,6 +23,8 @@ local Screen      = Device.screen
 local Epub        = require("core.epub")
 local Emoji       = require("core.emoji")
 local Covers      = require("core.covers")
+local ReviewThreads = require("core.reviewthreads")
+local FrameContainer = require("ui/widget/container/framecontainer")
 
 local function get_export_ui() return require("ui.export") end
 local function get_reader_ui() return require("ui.readerview") end
@@ -1178,6 +1180,45 @@ local function show_group_menu(info)
     P.showDropdown(items, action_y)
 end
 
+-- Choix de la source (extensions qui en proposent plusieurs pour un même roman : LNCrawler).
+-- Chaque source a son propre chemin : on rouvre simplement la fiche sur ce chemin, ce qui garde
+-- bibliothèque, progression et chapitres téléchargés séparés par source.
+local function show_source_menu(info)
+    local ext = ExtMgr.get(_source_id)
+    if not (ext and type(ext.listSources) == "function") then return end
+    local src_id = _source_id
+    local cur_path = info.path or ""
+    local loading = InfoMessage:new{ text = T("Chargement des sources…") }
+    UIManager:show(loading)
+    UIManager:scheduleIn(0.1, function()
+        UIManager:close(loading)
+        local ok, list = pcall(ext.listSources, ext, cur_path)
+        list = (ok and type(list) == "table") and list or {}
+        if #list <= 1 then
+            UIManager:show(InfoMessage:new{
+                text = T("Aucune autre source disponible pour ce roman."), timeout = 3 })
+            return
+        end
+        local ButtonDialogTitle = require("ui/widget/buttondialogtitle")
+        local dlg
+        local rows = {}
+        for _, s in ipairs(list) do
+            local target, is_cur = s.path, s.current
+            rows[#rows + 1] = {{
+                text = (is_cur and "✓  " or "") .. tostring(s.label),
+                callback = function()
+                    UIManager:close(dlg)
+                    if is_cur or src_id ~= _source_id then return end
+                    Detail.fetch(src_id, target)
+                end,
+            }}
+        end
+        rows[#rows + 1] = {{ text = T("Annuler"), callback = function() UIManager:close(dlg) end }}
+        dlg = ButtonDialogTitle:new{ title = T("Changer de source"), buttons = rows }
+        UIManager:show(dlg)
+    end)
+end
+
 local function show_chapter_actions(info)
     local action_y = P.TITLE_H + P.HAIRLINE + Screen:scaleBySize(50)
     local items = {
@@ -1476,6 +1517,11 @@ local function chapter_actions_bar(info)
     local bar = {
         { image = P.ICON_CHAPTER_SEARCH, size = 26, callback = function() show_chapter_jump_dialog(info) end },
     }
+    -- Extensions multi-sources (LNCrawler) : l'icône ouvre directement la liste des sources.
+    local ext_src = ExtMgr.get(_source_id)
+    if ext_src and type(ext_src.listSources) == "function" then
+        table.insert(bar, { image = P.ICON_SOURCES, size = 26, callback = function() show_source_menu(info) end })
+    end
     if #chapter_volumes() > 1 then
         table.insert(bar, { image = P.ICON_MENU, size = 26, callback = function() show_volume_menu(info) end })
     end
@@ -1745,6 +1791,7 @@ local function fetch_reviews_page(ext, source_id, path, page, replace_first_page
                     else
                         _reviews = _reviews or {}
                     end
+                    data.reviews = ReviewThreads.flatten(data.reviews)
                     for _, rev in ipairs(data.reviews) do
                         table.insert(_reviews, rev)
                     end
@@ -1877,11 +1924,16 @@ end
 
 local function build_review_item_rows(rev)
     local rows = {}
+    -- Limit indentation on small screens; reduce the text width before wrapping.
+    local depth = math.max(0, tonumber(rev.depth) or (rev.parent_id and 1 or 0))
+    local indent = math.min(Screen:scaleBySize(18) * math.min(depth, 3), math.floor(P.W * 0.15))
+    local width = P.W - indent
     local avatar_bb = Avatars.getCached(rev.avatar, P.SOURCE_ICON)
     local date_str  = format_review_date(rev.date)
 
     table.insert(rows, P.makeSourceRow(rev.author or T("Anonyme"), date_str, {
         icon_bb   = avatar_bb,
+        width     = width,
         mandatory = rev.rating and (tostring(rev.rating) .. "★") or nil,
     }))
 
@@ -1889,8 +1941,17 @@ local function build_review_item_rows(rev)
     if content ~= "" then
         local truncated = #content > REVIEW_TEXT_MAX_CHARS
         table.insert(rows, P.makeTextBlock(content, REVIEW_TEXT_MAX_CHARS, {
+            width = width,
             callback = truncated and function() show_full_review(rev) end or nil,
         }))
+    end
+    if indent > 0 then
+        for i, row in ipairs(rows) do
+            rows[i] = FrameContainer:new{
+                bordersize = 0, padding = 0, padding_left = indent,
+                background = Blitbuffer.COLOR_WHITE, row,
+            }
+        end
     end
     return rows
 end
@@ -1917,7 +1978,7 @@ end
 
 local function sorted_reviews(reviews)
     local list = {}
-    for i, rev in ipairs(reviews or {}) do
+    for i, rev in ipairs(ReviewThreads.flatten(reviews)) do
         list[i] = { rev = rev, idx = i }
     end
     -- table.sort() de Lua peut lever "invalid order function for sorting"
@@ -1950,7 +2011,7 @@ local function sorted_reviews(reviews)
     end)
     local out = {}
     for i, w in ipairs(list) do out[i] = w.rev end
-    return out
+    return ReviewThreads.order(out)
 end
 
 -- Range les avis en pages qui tiennent chacune dans budget_h. Comme chaque

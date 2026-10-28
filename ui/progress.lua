@@ -135,7 +135,8 @@ local function show_help()
         "",
         T("QUÊTES"),
         T("• Quotidiennes, hebdomadaires et du mois : chaque quête terminée donne un bonus d'XP."),
-        T("• Les récompenses quotidiennes et hebdomadaires augmentent avec ton niveau."),
+        T("• 10 quêtes par jour et par semaine : de 25 à 500 XP selon la difficulté."),
+        T("• Plus ton niveau monte, plus les quêtes difficiles (et leurs objectifs) augmentent."),
         "",
         T("SUCCÈS"),
         T("• Faciles, Moyens et Difficiles : un bonus d'XP unique à chaque succès débloqué."),
@@ -784,9 +785,11 @@ local function build_rank(avail, redraw)
         for i, pl in ipairs(players) do
             if is_me(pl) then my_rank = i; break end
         end
-        rows[#rows + 1] = trow(my_rank and tostring(my_rank) or "—", T("Vous"), tostring(me.level), fmt(me.xp),
-            { bold = true, bg = PALE, h = sz(40), creator = is_creator_pl(nil, true) })
-        rows[#rows + 1] = rgap(sz(12))
+        if not (my_rank and my_rank <= 3) then
+            rows[#rows + 1] = trow(my_rank and tostring(my_rank) or "—", T("Vous"), tostring(me.level), fmt(me.xp),
+                { bold = true, bg = PALE, h = sz(40), creator = is_creator_pl(nil, true) })
+            rows[#rows + 1] = rgap(sz(12))
+        end
     end
 
     if showing_works then

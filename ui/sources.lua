@@ -12,6 +12,7 @@ local ExtMgr      = require("core.extmgr")
 local Settings    = require("sefirah_settings")
 local P           = require("ui.panel")
 local LangFilter  = require("ui.lang_filter")
+local Catalog     = require("core.catalog")
 
 local Sources = {}
 local _page = 1
@@ -50,12 +51,61 @@ local function matches(meta, q)
     return false
 end
 
-local function close_all()
-    if _G.sefirah_close_all then _G.sefirah_close_all() end
-end
-
 local function rebuild()
     require("ui.main_widget").show("sources")
+end
+
+local function msg(text)
+    UIManager:show(require("ui/widget/infomessage"):new{ text = text })
+end
+
+local _auto_done = false   -- le catalogue en ligne n'est relu tout seul qu'une fois par ouverture de Sefirah
+
+-- Relit le catalogue du Hub. manual = true : demande le Wi-Fi si besoin et affiche les erreurs.
+local function refresh_catalog(manual)
+    local NetworkMgr = require("ui/network/manager")
+    local function go()
+        local info
+        if manual then
+            info = require("ui/widget/infomessage"):new{ text = T("Lecture du catalogue…"), timeout = 30 }
+            UIManager:show(info)
+            UIManager:forceRePaint()
+        end
+        local ok, res = Catalog.refresh()
+        if info then UIManager:close(info) end
+        if ok then
+            if res or manual then rebuild() end
+        elseif manual then
+            msg(T("Catalogue injoignable : ") .. tostring(res))
+        end
+    end
+    if manual then
+        NetworkMgr:runWhenOnline(go)
+    else
+        local okc, conn = pcall(NetworkMgr.isConnected, NetworkMgr)
+        if okc and conn then go() end
+    end
+end
+
+-- Télécharge une source du catalogue et l'installe.
+local function install_remote(m)
+    local NetworkMgr = require("ui/network/manager")
+    NetworkMgr:runWhenOnline(function()
+        local info = require("ui/widget/infomessage"):new{ text = T("Téléchargement de ") .. m.name .. "…", timeout = 60 }
+        UIManager:show(info)
+        UIManager:forceRePaint()
+        local ok, err = Catalog.install(m)
+        UIManager:close(info)
+        if ok then
+            rebuild()
+        else
+            msg(T("Installation impossible : ") .. tostring(err))
+        end
+    end)
+end
+
+local function close_all()
+    if _G.sefirah_close_all then _G.sefirah_close_all() end
 end
 
 function Sources.ext_settings(meta)
@@ -81,6 +131,27 @@ function Sources.ext_settings(meta)
                 Settings:toggleExt(meta.id, "page_mode", false)
                 close_settings()
                 rebuild()
+            end,
+        }))
+    end
+
+    -- Source venue du catalogue en ligne : mise à jour si le Hub en propose une plus récente.
+    local upd = Catalog.updateFor(meta.id)
+    if upd then
+        table.insert(rows, P.makeRow(T("Mettre à jour : v") .. tostring(upd.version), {
+            callback = function()
+                close_settings()
+                UIManager:show(ConfirmBox:new{
+                    text = T("Mettre à jour la source ") .. meta.name .. " (v" .. tostring(upd.version) .. ") ?",
+                    ok_text = T("Mettre à jour"),
+                    ok_callback = function()
+                        require("ui/network/manager"):runWhenOnline(function()
+                            local ok, err = Catalog.install(upd)
+                            if ok then msg(T("Source mise à jour : ") .. meta.name); rebuild()
+                            else msg(T("Installation impossible : ") .. tostring(err)) end
+                        end)
+                    end,
+                })
             end,
         }))
     end
@@ -111,6 +182,11 @@ function Sources.build_rows()
 
     -- Toutes les sources livrées avec le plugin, installées ou non. Seules les
     -- sources installées apparaissent dans Parcourir et la recherche globale.
+    Catalog.entries()   -- dernier catalogue connu (hors ligne) ; la mise à jour se fait après l'affichage
+    if not _auto_done then
+        _auto_done = true
+        if Catalog.stale() then UIManager:nextTick(function() refresh_catalog(false) end) end
+    end
     local all = ExtMgr.visibleAll()
     if _search then
         local found = {}
@@ -138,6 +214,13 @@ function Sources.build_rows()
                     right_callback = function()
                         if is_installed then
                             Sources.ext_settings(m)
+                        elseif m.remote then
+                            UIManager:show(ConfirmBox:new{
+                                text = T("Installer la source ") .. m.name .. " (v" .. tostring(m.version) .. ") ?\n\n"
+                                    .. T("Elle sera téléchargée depuis Sefirah Source Hub. Ce code sera exécuté par le plugin."),
+                                ok_text = T("Installer"),
+                                ok_callback = function() install_remote(m) end,
+                            })
                         else
                             UIManager:show(ConfirmBox:new{
                                 text = T("Installer la source ") .. m.name .. " ?",
@@ -196,6 +279,21 @@ function Sources.build_rows()
     local actions = {
         kind_switch = P.kindSwitch(function() _page = 1; rebuild() end, { scope = "available" }),
         on_search = open_search,
+        -- Icône antenne : reçoit une source envoyée depuis Sefirah Source Hub (code à 4 chiffres).
+        on_receive = function()
+            local dlg
+            dlg = require("ui/widget/buttondialog"):new{
+                title = T("Ajouter des sources"),
+                title_align = "center",
+                buttons = {
+                    {{ text = T("Actualiser le catalogue"), callback = function()
+                        UIManager:close(dlg); refresh_catalog(true) end }},
+                    {{ text = T("Recevoir avec un code"), callback = function()
+                        UIManager:close(dlg); require("core.receive").start() end }},
+                },
+            }
+            UIManager:show(dlg)
+        end,
         on_lang = function()
             LangFilter.show(function()
                 _page = 1

@@ -1,3 +1,25 @@
+# Sefirah v1.5
+
+## Français
+
+### Nouveautés
+- **Sources** : l'onglet lit le catalogue de Sefirah Source Hub. Un appui sur l'icône d'installation télécharge et installe la source, sans rien copier à la main. L'icône antenne propose « Actualiser le catalogue » ou « Recevoir avec un code ». Un bouton « Mettre à jour » apparaît dans les réglages d'une source du Hub quand une version plus récente existe.
+- **Nouvelles extensions** : LNCrawler, MyDramaNovel, WordRain.
+
+### Changements
+- **Scribble Hub** retirée.
+
+## English
+
+### New
+- **Sources**: the tab reads the Sefirah Source Hub catalogue. Tap the install icon to download and install a source, no manual copying. The antenna icon offers "Refresh the catalogue" or "Receive with a code". An "Update" button shows in the settings of a Hub source when a newer version exists.
+- **New extensions**: LNCrawler, MyDramaNovel, WordRain.
+
+### Changes
+- **Scribble Hub** removed.
+
+---
+
 # Sefirah v1.4.1
 
 ## Français

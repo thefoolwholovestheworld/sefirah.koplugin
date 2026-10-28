@@ -1080,10 +1080,10 @@ local ext = {
     name       = "RanobeHub",
     site       = BASE,
     lang       = "ru",
-    version    = "0.6.1",
+    version    = "0.7.0",
     -- Avis = commentaires du roman (API JSON /api/comments, voir parseReviews).
     maxReviews = 150,
-    review_cache_rev = 3,
+    review_cache_rev = 4,
     popularFilters = POPULAR_FILTERS,
     searchFilters  = POPULAR_FILTERS,
 }
@@ -1261,39 +1261,27 @@ local function comment_author(it)
     return (type(it.userName) == "string" and it.userName ~= "") and it.userName or "Anonyme"
 end
 
--- Réponses d'un commentaire, ajoutées sous le texte au format « ↳ pseudo : texte »
--- (comme les autres sources) ; en cas d'échec réseau, le commentaire reste sans réponses.
+-- Les réponses sont converties en avis distincts, jamais en texte ajouté au parent.
 local function fetch_replies(novel_id, parent_id)
     local u = comments_url(novel_id, "old", "&parentId=" .. tostring(parent_id) .. "&limit=100")
     local ok, b = pcall(http_get, u, true)
     if not ok or not b then return nil end
     local d = json_decode(b)
     if not d or type(d.items) ~= "table" then return nil end
-    local lines = {}
-    for _, r in ipairs(d.items) do
-        local t = comment_text(r)
-        if t then
-            lines[#lines + 1] = "↳ " .. comment_author(r) .. " : " .. (t:gsub("\n+", " "))
-        end
-    end
-    return #lines > 0 and table.concat(lines, "\n") or nil
+    return d.items
 end
 
-local function comment_to_review(it, novel_id)
+local function comment_to_review(it, novel_id, parent_id, depth, seen)
+    if type(it) ~= "table" then return nil end
+    depth, seen = depth or 0, seen or {}
+    local id = it.id and tostring(it.id)
+    if id and seen[id] then return nil end
+    if id then seen[id] = true end
     local content = comment_text(it)
     if not content then return nil end
-    local replies = tonumber(it.replyCount) or 0
-    if replies > 0 and it.id then
-        local rt = fetch_replies(novel_id, it.id)
-        if rt then
-            content = content .. "\n" .. rt
-        else
-            content = content .. "\n↳ " .. replies .. (replies > 1 and " réponses" or " réponse")
-        end
-    end
     local score = tonumber(it.score) or 0
     local avatar = type(it.avatarUrl) == "string" and it.avatarUrl ~= "" and abs_url(it.avatarUrl) or nil
-    return {
+    local review = {
         id       = it.id,
         author   = comment_author(it),
         content  = content,
@@ -1301,7 +1289,20 @@ local function comment_to_review(it, novel_id)
         avatar   = avatar,
         likes    = score > 0 and score or 0,
         dislikes = score < 0 and -score or 0,
+        parent_id = parent_id,
+        depth = depth,
     }
+    if (tonumber(it.replyCount) or 0) > 0 and id and depth < 20 then
+        local replies = fetch_replies(novel_id, it.id)
+        if replies then
+            review.replies = {}
+            for _, r in ipairs(replies) do
+                local child = comment_to_review(r, novel_id, id, depth + 1, seen)
+                if child then review.replies[#review.replies + 1] = child end
+            end
+        end
+    end
+    return review
 end
 
 function ext:parseReviews(path, page, sort)

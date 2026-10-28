@@ -573,7 +573,8 @@ local ext = {
     name    = "Novel Mania",
     site    = BASE,
     lang    = "pt",
-    version = "0.2.1",
+    version = "0.3.0",
+    review_cache_rev = 1,
     popularFilters = POPULAR_FILTERS,
     maxReviews = 150, -- limite d'avis affichés (même valeur pour toutes les extensions)
 }
@@ -959,6 +960,8 @@ local function comment_to_review(c)
     end
 
     return {
+        id       = str(c.id) or str(c.uuid),
+        parent_id = str(c.parent_id) or str(c.parentId),
         author   = name or "Anônimo",
         rating   = nil,
         content  = content,
@@ -1018,15 +1021,25 @@ function ext:parseReviews(path, page, sort)
         return { reviews = {}, has_more = false, error = "réponse des commentaires non reconnue" }
     end
 
-    local reviews = {}
-    for _, c in ipairs(list) do
-        local ok, r = pcall(comment_to_review, c)
-        if ok and r then
-            reviews[#reviews + 1] = r
-        elseif not ok then
-            logger.err("NovelMania: comment_to_review a échoué", tostring(r))
+    local reviews, visited = {}, {}
+    local function append_comments(comments, parent, depth)
+        if type(comments) ~= "table" then return end
+        for _, c in ipairs(comments) do
+            if type(c) == "table" and not visited[c] then
+                visited[c] = true
+                local ok, r = pcall(comment_to_review, c)
+                if ok and r then
+                    r.parent_id = r.parent_id or parent
+                    r.depth = depth or (r.parent_id and 1 or 0)
+                    reviews[#reviews + 1] = r
+                    append_comments(c.replies, r.id or parent, r.depth + 1)
+                elseif not ok then
+                    logger.err("NovelMania: comment_to_review a échoué", tostring(r))
+                end
+            end
         end
     end
+    append_comments(list, nil, nil)
 
     -- Garde-fou anti-doublons (page ignorée par le site).
     local key = slug .. "|" .. sort_by

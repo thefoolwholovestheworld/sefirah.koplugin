@@ -565,7 +565,7 @@ local PAR_WIDTH_DEFAULT = 5
 -- novelfrance : un seul à la fois. Cinq sous-processus (fork de toute la liseuse, avec la
 -- liste de milliers de chapitres en mémoire) faisaient tuer KOReader par manque de mémoire
 -- (Kobo Clara) juste après l'actualisation d'un roman long comme Shadow Slave.
-local PAR_WIDTH = { ao3 = 1, lightnovelvf = 1, wattpad = 2, novelfrance = 1 }
+local PAR_WIDTH = { ao3 = 1, lightnovelvf = 1, mydramanovel = 2, wordrain = 2, wattpad = 2, novelfrance = 1 }
 local PAR_JOB_TIMEOUT = 60      -- un chapitre trop lent est arrêté (puis réessayé en séquentiel)
 local PAR_TOTAL_TIMEOUT = 600
 

@@ -41,7 +41,7 @@ local logger = require("logger")
 
 local T = require("core.i18n").T
 
--- Même identité de navigateur que scribblehub.lua / 69shu.lua.
+-- Même identité de navigateur que 69shu.lua.
 local UA = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 "
     .. "(KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36"
 

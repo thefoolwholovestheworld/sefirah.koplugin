@@ -1,0 +1,432 @@
+-- NovelFrance — source générée par Sefirah Source Hub (modèle sans IA). À relire et tester.
+-- Contrat : voir extensions/mangapill.lua du plugin Sefirah.
+local logger = require("logger")
+local BASE   = "https://novelfrance.fr"
+local SEARCH = ""
+local LISTP  = "/novel/"
+local CHAPP  = "chapter-"
+local CONT   = ""
+local UA = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36"
+
+local function get(p)
+    local url = p:match("^https?://") and p or (BASE .. p)
+    local body, code = require("core.net").get(url, { headers = { ["User-Agent"] = UA, ["Referer"] = BASE .. "/" }, timeout = 15 })
+    if body and #body > 2 then return body end
+    logger.warn("NovelFrance: échec", url, tostring(code))
+    return nil, tostring(code)
+end
+
+-- ===== décodage des entités HTML (&#x27; &#39; &amp; &eacute; …) en une seule passe =====
+local function cp2utf8(c)
+    if not c or c <= 0 or c > 0x10FFFF then return nil end
+    if c < 0x80 then return string.char(c) end
+    if c < 0x800 then return string.char(0xC0 + math.floor(c / 64), 0x80 + c % 64) end
+    if c < 0x10000 then return string.char(0xE0 + math.floor(c / 4096), 0x80 + math.floor(c / 64) % 64, 0x80 + c % 64) end
+    return string.char(0xF0 + math.floor(c / 262144), 0x80 + math.floor(c / 4096) % 64, 0x80 + math.floor(c / 64) % 64, 0x80 + c % 64)
+end
+local ENT = { amp = "&", lt = "<", gt = ">", quot = '"', apos = "'", nbsp = " ",
+    rsquo = "’", lsquo = "‘", ldquo = "“", rdquo = "”", hellip = "…", ndash = "–", mdash = "—", laquo = "«", raquo = "»",
+    eacute = "é", egrave = "è", ecirc = "ê", euml = "ë", agrave = "à", acirc = "â", ccedil = "ç", icirc = "î", iuml = "ï",
+    ocirc = "ô", ugrave = "ù", ucirc = "û", uuml = "ü", oelig = "œ", Eacute = "É", Egrave = "È", Agrave = "À", Ccedil = "Ç" }
+local function dec(s)
+    if not s then return s end
+    return (s:gsub("&(#?%w+);", function(e)
+        local n = e:match("^#[xX](%x+)$")
+        if n then return cp2utf8(tonumber(n, 16)) end
+        n = e:match("^#(%d+)$")
+        if n then return cp2utf8(tonumber(n)) end
+        return ENT[e]
+    end))
+end
+local function txt(h)
+    h = (h or ""):gsub("<[^>]+>", " ")
+    h = dec(h):gsub("%s+", " ")
+    return (h:match("^%s*(.-)%s*$"))
+end
+local NL = string.char(10)
+local function para(h) -- texte avec paragraphes (descriptions)
+    h = (h or ""):gsub("<script.-</script>", ""):gsub("<style.-</style>", "")
+    h = h:gsub("</p>", NL .. NL):gsub("<br%s*/?>", NL):gsub("<[^>]+>", "")
+    h = dec(h):gsub(string.char(13), ""):gsub(" +", " ")
+    h = h:gsub(" *" .. NL .. " *", NL):gsub(NL .. NL .. "+", NL .. NL)
+    return (h:match("^%s*(.-)%s*$"))
+end
+
+local function attr(tag, n)
+    local k = "%f[%w_%-]" .. n:gsub("%-", "%%-") .. "%s*=%s*"
+    return tag:match(k .. '"([^"]*)"') or tag:match(k .. "'([^']*)'")
+end
+local function abs(u) if not u then return nil end if u:sub(1,2)=="//" then return "https:"..u end if u:sub(1,1)=="/" then return BASE..u end return u end
+local function enc(s) return (tostring(s):gsub("([^%w%-%._~])", function(c) return string.format("%%%02X", c:byte()) end)) end
+local function rel(h) return (h:gsub("^"..BASE:gsub("%p","%%%0"), "")) end
+-- clé de comparaison d'un lien : sans domaine, sans ?query, sans # ni / final, en minuscules
+local function norm(h)
+    h = h:gsub("^https?://[^/]+", ""):gsub("[?#].*$", ""):gsub("/+$", "")
+    return h:lower()
+end
+-- /_next/image?url=XXX&w=… (Next.js) -> l'image d'origine XXX
+local function unnext(u)
+    local q = u:match("/_next/image%?url=([^&]+)")
+    if not q then return u end
+    return (q:gsub("%%(%x%x)", function(h) return string.char(tonumber(h, 16)) end))
+end
+local function cover_of(img)
+    if not img then return nil end
+    for _, k in ipairs({ "data-src", "data-lazy-src", "data-original", "src", "srcset" }) do
+        local u = attr(img, k)
+        if k == "srcset" and u then u = u:match("^%s*(%S+)") end
+        if u and u ~= "" and not u:match("^data:") and not u:lower():find("placeholder", 1, true) and not u:lower():find("blank", 1, true) then
+            return abs(unnext(dec(u)))
+        end
+    end
+    return nil
+end
+
+-- contenu (équilibré) de la balise ouverte en position "from" : gère les <div> imbriquées
+local function inner(html, from, tn)
+    local open, close = "<" .. tn, "</" .. tn
+    local depth, p = 1, from
+    while true do
+        local a = html:find(open, p, true)
+        local b = html:find(close, p, true)
+        if not b then return nil end
+        if a and a < b then
+            if not html:sub(a + #open, a + #open):match("%w") then depth = depth + 1 end
+            p = a + #open
+        else
+            if not html:sub(b + #close, b + #close):match("%w") then
+                depth = depth - 1
+                if depth == 0 then return html:sub(from, b - 1) end
+            end
+            p = b + #close
+        end
+    end
+end
+-- premier élément (div, article, section…) dont la classe contient cls ; renvoie son contenu complet
+local function grab(html, cls)
+    local pos = 1
+    while true do
+        local s, e, tn, attrs = html:find("<(%a%w*)(%s[^>]*)>", pos)
+        if not s then return nil end
+        local c = attr(attrs, "class")
+        if c and c:find(cls, 1, true) then
+            local out = inner(html, e + 1, tn)
+            if out and #out > 50 then return out end
+        end
+        pos = e + 1
+    end
+end
+
+local function parse_list(html)
+    local out, idx = {}, {}
+    for tag, inner_html in html:gmatch("(<a%s[^>]->)(.-)</a>") do
+        local href = attr(tag, "href")
+        if href and LISTP ~= "" and href:find(LISTP, 1, true) and not (CHAPP ~= "" and href:find(CHAPP, 1, true)) then
+            local k = norm(href)
+            local img = inner_html:match("<img[^>]->")
+            local name = attr(tag, "title") or (img and attr(img, "alt"))
+            if name and name ~= "" then name = dec(name) else name = txt(inner_html) end
+            local cover = cover_of(img)
+            local it = idx[k]
+            if it then -- même œuvre déjà vue (autre lien, autre forme d'URL) : on complète seulement
+                if it.name == "" and name ~= "" then it.name = name end
+                if not it.cover and cover then it.cover = cover end
+            else
+                it = { name = name, path = rel(href), cover = cover }
+                idx[k] = it
+                out[#out+1] = it
+            end
+        end
+    end
+    local res = {}
+    for _, it in ipairs(out) do if it.name ~= "" then res[#res+1] = it end end
+    return res
+end
+
+local ext = { id = "novelfrance", name = "NovelFrance", site = BASE, lang = "fr", version = "0.1.0",
+    popularFilters = {}, searchFilters = {}, hasReviews = false, chapterCommentsPanel = false }
+
+function ext:popularNovels(page)
+    local html, err = get(BASE .. "/")
+    if not html then return { novels = {}, error = "Site injoignable (" .. tostring(err) .. ")" } end
+    return { novels = parse_list(html) }
+end
+
+function ext:searchNovels(term, page)
+    term = tostring(term or ""):match("^%s*(.-)%s*$")
+    if term == "" then return ext:popularNovels(page) end
+    local url = SEARCH:gsub("{q}", function() return enc(term) end):gsub("{page}", function() return tostring(page or 1) end)
+    local html, err = get(url)
+    if not html then return { novels = {}, error = "Recherche impossible (" .. tostring(err) .. ")" } end
+    return { novels = parse_list(html) }
+end
+
+local function meta(html, path)
+    local t = html:match("<h1[^>]*>(.-)</h1>")
+    local name = t and txt(t) or ""
+    if name == "" then name = dec(html:match('property="og:title"[^>]-content="([^"]*)"') or "") end
+    if name == "" then name = path end
+    local og = html:match('property="og:description"[^>]-content="([^"]*)"')
+        or html:match('content="([^"]*)"[^>]-property="og:description"')
+        or html:match('name="description"[^>]-content="([^"]*)"') or ""
+    og = dec(og)
+    local summary = og
+    -- description souvent tronquée (« … ») dans og:description : on cherche la version complète dans la page
+    if og == "" or og:sub(-3) == "..." or og:sub(-3) == "…" or #og < 200 then
+        local head = (og:gsub("%s+", " ")):sub(1, 25)
+        for _, k in ipairs({ "synopsis", "summary", "description", "resume", "story", "desc" }) do
+            local b = grab(html, k)
+            if b and select(2, b:gsub("<a%s", "")) <= 3 then
+                local d = para(b)
+                if #d > #og and #d > 60 and #d < 4000 and (head == "" or (d:gsub("%s+", " ")):find(head, 1, true)) then
+                    summary = d
+                    break
+                end
+            end
+        end
+    end
+    return { name = name, path = path,
+        cover = abs(dec(html:match('property="og:image"[^>]-content="([^"]*)"'))),
+        summary = summary, author = "", status = "", genres = {} }
+end
+
+function ext:parseNovelMeta(path)
+    local html = get(path); if not html then return nil end
+    local m = meta(html, path); m.total_chapters = 0; return m
+end
+
+function ext:parseNovel(path)
+    local html = get(path); if not html then return nil end
+    local m, ch, seen = meta(html, path), {}, {}
+    for tag, inner_html in html:gmatch("(<a%s[^>]->)(.-)</a>") do
+        local href = attr(tag, "href")
+        if href and CHAPP ~= "" and href:find(CHAPP, 1, true) and not seen[norm(href)] then
+            seen[norm(href)] = true
+            local name = txt(inner_html)
+            if name == "" then name = dec(attr(tag, "title") or "") end
+            if name == "" then name = "Chapitre " .. (#ch + 1) end
+            ch[#ch+1] = { name = name, path = rel(href) }
+        end
+    end
+    for i, c in ipairs(ch) do c.chapter_number = i end
+    m.chapters, m.totalPages = ch, 1
+    return m
+end
+
+function ext:parseChapter(path)
+    local html = get(path); if not html then return "<p>Chapitre injoignable.</p>" end
+    html = html:gsub("<script.-</script>", ""):gsub("<style.-</style>", "")
+    -- 1) le conteneur de classe CONT (balise quelconque, <div> imbriquées gérées)
+    local body = CONT ~= "" and grab(html, CONT) or nil
+    -- 2) repli : tous les paragraphes <p> de la page
+    if not body then
+        local ps, n = {}, 0
+        for p in html:gmatch("<p%f[%s>][^>]*>(.-)</p>") do
+            local t = txt(p)
+            if #t > 1 then ps[#ps+1] = "<p>" .. p .. "</p>"; n = n + #t end
+        end
+        if #ps >= 3 and n > 300 then body = table.concat(ps) end
+    end
+    if not body or #body < 50 then return "<p>Texte du chapitre introuvable (classe « " .. CONT .. " »).</p>" end
+    return body
+end
+
+-- ===== MODE NEXT.JS : lecture du JSON embarqué dans la page (self.__next_f.push) =====
+local NK_NOVEL   = "initialNovel"
+local NK_CHAP    = "initialChapter"
+local NK_PARA    = "paragraphs"
+local NK_TEXT    = "content"
+local NK_CONTENT = ""
+local NK_LIST    = "genres"
+local API_CHAP   = ""
+local API_SEARCH = ""
+local BS, QT = string.char(92), string.char(34)
+
+local function unescape_js(s)
+    return (s:gsub(BS .. "(.)", function(x)
+        if x == "n" then return NL end
+        if x == "t" then return string.char(9) end
+        if x == "r" then return "" end
+        if x == QT or x == BS or x == "/" then return x end
+        return BS .. x
+    end))
+end
+-- concatène tous les self.__next_f.push([1,"..."]) de la page
+local function rsc_stream(html)
+    local out, pos, marker = {}, 1, ".push([1," .. QT
+    while true do
+        local a = html:find(marker, pos, true)
+        if not a then break end
+        local i = a + #marker
+        local j = i
+        while true do
+            local q = html:find(QT, j, true)
+            if not q then j = #html + 1; break end
+            local bs, k = 0, q - 1
+            while k >= i and html:sub(k, k) == BS do bs = bs + 1; k = k - 1 end
+            if bs % 2 == 0 then j = q; break end
+            j = q + 1
+        end
+        out[#out + 1] = unescape_js(html:sub(i, j - 1))
+        pos = j + 1
+    end
+    return table.concat(out)
+end
+-- lignes texte externalisées « id:T<longueur hex>,<texte> » ; une valeur "$id" y renvoie
+local function rsc_rows(stream)
+    local rows, pos = {}, 1
+    while pos <= #stream do
+        local s, e, id, hx = stream:find("(%w+):T(%x+),", pos)
+        if not s then break end
+        local len = tonumber(hx, 16)
+        if not len or e + len > #stream then break end
+        rows[id] = stream:sub(e + 1, e + len)
+        pos = e + len + 1
+    end
+    return rows
+end
+local function resolve(s, rows)
+    for _ = 1, 8 do
+        if type(s) ~= "string" then return s end
+        local id = s:match("^%$(%w+)$")
+        if not (id and rows[id]) then break end
+        s = rows[id]
+    end
+    return s
+end
+-- objet JSON équilibré après "<key>":
+local function find_obj(text, key)
+    if not key or key == "" then return nil end
+    local s, e = text:find(QT .. key .. QT .. ":{", 1, true)
+    if not s then return nil end
+    local depth, in_str, esc = 0, false, false
+    for i = e, #text do
+        local ch = text:sub(i, i)
+        if in_str then
+            if esc then esc = false
+            elseif ch == BS then esc = true
+            elseif ch == QT then in_str = false end
+        elseif ch == QT then in_str = true
+        elseif ch == "{" then depth = depth + 1
+        elseif ch == "}" then
+            depth = depth - 1
+            if depth == 0 then return text:sub(e, i) end
+        end
+    end
+    return nil
+end
+local function jdecode(str)
+    local ok_j, J = pcall(require, "rapidjson")
+    if not ok_j then J = require("json") end
+    local ok, d = pcall(J.decode, str)
+    if ok then return d end
+    return nil
+end
+local function pick(o, names)
+    for _, n in ipairs(names) do
+        local v = o[n]
+        if type(v) == "string" and v ~= "" then return v end
+    end
+    return nil
+end
+local function esc_html(s) return (tostring(s or ""):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")) end
+
+local function next_novel(path)
+    local html, err = get(path)
+    if not html then return nil, err end
+    local st = rsc_stream(html)
+    local raw = find_obj(st, NK_NOVEL)
+    return raw and jdecode(raw), st
+end
+local function novel_meta(n, st, path)
+    local desc = resolve(n.description or n.synopsis, rsc_rows(st))
+    return { name = dec(type(n.title) == "string" and n.title or path), path = path,
+        cover = abs(pick(n, { "coverImage", "cover", "coverUrl", "image", "thumbnail" })),
+        summary = type(desc) == "string" and para(desc) or "",
+        author = pick(n, { "author" }) or "", status = pick(n, { "status" }) or "", genres = {},
+        total_chapters = (type(n._count) == "table" and tonumber(n._count.chapters)) or 0 }
+end
+local function map_chapters(list, base_path)
+    local ch = {}
+    if type(list) ~= "table" then return ch end
+    for _, c in ipairs(list) do
+        if type(c) == "table" and type(c.slug) == "string" then
+            ch[#ch + 1] = { name = dec(tostring(c.title or c.name or ("Chapitre " .. (#ch + 1)))),
+                path = base_path .. "/" .. c.slug, chapter_number = c.chapterNumber or c.number, locked = c.isPremium or nil }
+        end
+    end
+    return ch
+end
+-- l'interface attend la liste du plus récent au plus ancien
+local function newest_first(ch, asc_hint)
+    local a = ch[1] and tonumber(ch[1].chapter_number)
+    local b = ch[#ch] and tonumber(ch[#ch].chapter_number)
+    local asc = asc_hint
+    if a and b and a ~= b then asc = a < b end
+    if asc then for i = 1, math.floor(#ch / 2) do ch[i], ch[#ch + 1 - i] = ch[#ch + 1 - i], ch[i] end end
+    return ch
+end
+local function api_chapters(slug)
+    local all, skip = {}, 0
+    for _ = 1, 200 do
+        local url = API_CHAP:gsub("{slug}", function() return slug end):gsub("{skip}", function() return tostring(skip) end)
+        local body = get(url)
+        local data = body and jdecode(body)
+        if type(data) ~= "table" then return nil end
+        local page = data.chapters or data.data or data.items or (data[1] and data) or {}
+        for _, c in ipairs(page) do all[#all + 1] = c end
+        local total = tonumber(data.total)
+        if #page == 0 or not API_CHAP:find("{skip}", 1, true) or not (data.hasMore or (total and #all < total)) then break end
+        skip = #all
+    end
+    return all
+end
+
+function ext:parseNovelMeta(path)
+    local n, st = next_novel(path)
+    if not n then return nil end
+    return novel_meta(n, st, path)
+end
+
+function ext:parseNovel(path)
+    local base_path = path:gsub("/+$", "")
+    local n, st = next_novel(path)
+    if not n then return nil end
+    local m, list = novel_meta(n, st, path), nil
+    if API_CHAP ~= "" then list = api_chapters(base_path:match("([^/]+)$") or "")
+    elseif NK_LIST ~= "" then list = n[NK_LIST] end
+    m.chapters = newest_first(map_chapters(list, base_path), API_CHAP:find("asc", 1, true) ~= nil)
+    m.totalPages = 1
+    if API_CHAP ~= "" and list == nil then m.incomplete = true end
+    return m
+end
+
+function ext:parseChapter(path)
+    local html = get(path)
+    if not html then return "<p>Chapitre injoignable.</p>" end
+    local st = rsc_stream(html)
+    local raw = find_obj(st, NK_CHAP)
+    local ch = raw and jdecode(raw)
+    if type(ch) ~= "table" then return "<p>Impossible d'extraire le contenu de ce chapitre.</p>" end
+    if ch.isPremium then return "<p>Ce chapitre est réservé aux membres Premium.</p>" end
+    local rows, parts = rsc_rows(st), {}
+    local title = resolve(ch.title, rows)
+    if type(title) == "string" and title ~= "" then parts[#parts + 1] = "<h1>" .. esc_html(dec(title)) .. "</h1>" end
+    if NK_PARA ~= "" and type(ch[NK_PARA]) == "table" then
+        for _, p in ipairs(ch[NK_PARA]) do
+            local t = type(p) == "table" and p[NK_TEXT] or (type(p) == "string" and p) or nil
+            t = resolve(t, rows)
+            if type(t) == "string" and t ~= "" then parts[#parts + 1] = "<p>" .. esc_html(dec(t)) .. "</p>" end
+        end
+    elseif NK_CONTENT ~= "" then
+        local t = resolve(ch[NK_CONTENT], rows)
+        if type(t) == "string" then
+            if t:find("<p", 1, true) then parts[#parts + 1] = t
+            else for line in (t .. NL):gmatch("(.-)" .. NL) do if line:match("%S") then parts[#parts + 1] = "<p>" .. esc_html(line) .. "</p>" end end end
+        end
+    end
+    if #parts == 0 then return "<p>Texte du chapitre introuvable (clé « " .. NK_CHAP .. " »).</p>" end
+    return table.concat(parts, NL)
+end
+
+return ext

@@ -18,7 +18,7 @@ local I18n        = require("core.i18n")
 -- Filtres de langue des sources multilingues (« lang » : MangaDex, WEBTOON, Wattpad ;
 -- « language » : AO3). Leur valeur par défaut est la langue de Sefirah quand la source
 -- la propose, sinon le défaut déclaré par l'extension.
-local LANG_KEYS = { lang = true, language = true }
+local LANG_KEYS = { lang = true, language = true, langs = true }  -- « langs » : sélection multiple (LNCrawler)
 local function filter_default(f)
     if LANG_KEYS[f.key] and type(f.options) == "table" and #f.options > 0 then
         return I18n.matchLanguage(f.options) or f.default
@@ -648,7 +648,7 @@ end
 -- indépendamment du nombre de rangées qui tiendraient autrement dans la hauteur de l'écran.
 local BROWSE_GRID_ROWS = 2
 
--- Couvertures en grille, sauf pour les sources marquées `listMode` (Scribble Hub :
+-- Couvertures en grille, sauf pour les sources marquées `listMode` (ex. AO3 :
 -- une ligne de texte par roman).
 local function covers_on(source_id)
     if source_id and (ExtMgr.getMeta(source_id) or {}).listMode then return false end

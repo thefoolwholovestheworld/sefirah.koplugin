@@ -3,7 +3,7 @@
 -- Sefirah is a FORK of Mythos by unitreign (GPL-3.0), modified by thefoolwholovestheworld.
 
 -- Sefirah — point d'entrée principal du plugin.
-_G.SEFIRAH_VERSION = "1.4.1"
+_G.SEFIRAH_VERSION = "1.5"
 
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local UIManager       = require("ui/uimanager")

@@ -34,6 +34,8 @@ local _SEARCH_ICON_PATH = _PLUGIN_ROOT .. "/resources/chapter_search.png"
 -- (Étoiles/Date) de l'onglet Avis (sort.png) — les deux ouvrent un menu déroulant
 -- de choix, contrairement à review_sort.png qui est une simple bascule de sens.
 local _FILTER_ICON_PATH = _PLUGIN_ROOT .. "/resources/sort.png"
+-- Icône « Recevoir une source » (antenne), tout à gauche des icônes de la barre de titre de l'onglet Sources.
+local _RECEIVE_ICON_PATH = _PLUGIN_ROOT .. "/resources/receive.png"
 
 local P = {}
 
@@ -57,6 +59,8 @@ P.ICON_SORT           = _PLUGIN_ROOT .. "/resources/sort.png"
 P.ICON_REVIEW_SORT    = _PLUGIN_ROOT .. "/resources/review_sort.png"
 P.ICON_CHAPTER_SEARCH = _PLUGIN_ROOT .. "/resources/chapter_search.png"
 P.ICON_COMMENT        = _PLUGIN_ROOT .. "/resources/comment.png"
+-- Bouton « Sources » (extensions qui proposent plusieurs sources : LNCrawler).
+P.ICON_SOURCES        = _PLUGIN_ROOT .. "/resources/sources_scan.png"
 -- Bouton « Traduire » de la barre d'actions des chapitres (ui/detail.lua).
 P.ICON_TRANSLATE      = _PLUGIN_ROOT .. "/resources/translate.png"
 -- Variante affichée quand les commentaires sont masqués (onglet Avis retiré) :
@@ -1990,6 +1994,8 @@ local function _buildTabBody(active_id, rows, title, close_fn, nav, actions)
 
     actions = actions or {}
     local icons = {}
+    -- Icône antenne (onglet Sources) : tout à gauche des autres icônes.
+    if actions.on_receive then table.insert(icons, { image = _RECEIVE_ICON_PATH, callback = actions.on_receive }) end
     if actions.on_search then table.insert(icons, { image = _SEARCH_ICON_PATH, callback = actions.on_search }) end
     if actions.on_sort   then table.insert(icons, { image = _FILTER_ICON_PATH, callback = actions.on_sort   }) end
     -- Filtre de langues (Parcourir / Sources) : même icône que le tri (sort.png).
@@ -2204,7 +2210,14 @@ function P.showFilterPanel(title, groups, selection, on_apply, on_back)
             for oi = col_first, math.min(col_first + per_col - 1, last_opt) do
                 local opt = opts[oi]
                 local selected
-                if g.multi then
+                local opt_label = opt.label
+                if g.text then
+                    -- Champ de saisie libre (ex. auteur) : une seule ligne qui affiche la valeur
+                    -- saisie, ou une invite ; toucher ouvre le clavier.
+                    local val = tostring(work[g.key] or "")
+                    selected  = val ~= ""
+                    opt_label = selected and ("✓ " .. val) or ("+ " .. T("Saisir…"))
+                elseif g.multi then
                     -- Sélection multiple : work[key] = « id1,id2,… » ; « Tous » (id "") = rien de coché.
                     if opt.id == "" then
                         selected = (work[g.key] or "") == ""
@@ -2215,7 +2228,7 @@ function P.showFilterPanel(title, groups, selection, on_apply, on_back)
                     selected = work[g.key] == opt.id
                 end
                 local lbl = TextWidget:new{
-                    text    = (selected and "✓ " or "   ") .. T(opt.label),
+                    text    = g.text and opt_label or ((selected and "✓ " or "   ") .. T(opt_label)),
                     face    = opt_face,
                     bold    = selected,
                     fgcolor = Blitbuffer.COLOR_BLACK,
@@ -2231,6 +2244,32 @@ function P.showFilterPanel(title, groups, selection, on_apply, on_back)
                 }
                 local gkey, oid, gdefault = g.key, opt.id, g.default
                 table.insert(children, P.wrapTappable(frame, function()
+                    if g.text then
+                        local InputDialog = require("ui/widget/inputdialog")
+                        local dlg
+                        dlg = InputDialog:new{
+                            title       = T(g.label or ""),
+                            input       = tostring(work[gkey] or ""),
+                            input_hint  = g.hint and T(g.hint) or "",
+                            buttons = {{
+                                { text = T("Annuler"), callback = function() UIManager:close(dlg) end },
+                                { text = T("Effacer"), callback = function()
+                                    work[gkey] = ""
+                                    UIManager:close(dlg)
+                                    safe_rebuild()
+                                end },
+                                { text = T("OK"), is_enter_default = true, callback = function()
+                                    local v = (dlg:getInputText() or ""):gsub("^%s+", ""):gsub("%s+$", "")
+                                    work[gkey] = v
+                                    UIManager:close(dlg)
+                                    safe_rebuild()
+                                end },
+                            }},
+                        }
+                        UIManager:show(dlg)
+                        dlg:onShowKeyboard()
+                        return
+                    end
                     -- Re-taper l'option déjà choisie la désélectionne (retour
                     -- à la valeur par défaut du groupe) au lieu de rester
                     -- bloquée dessus — demandé 2026-09-15.

@@ -21,6 +21,8 @@ local _plugin_dir = _core_dir:match("^(.+)/[^/]+$") or _core_dir
 local metas = {
     { id = "novelfrance", name = "NovelFrance",          site = "https://novelfrance.fr",         lang = "fr",    version = "1.0.0", runtime = "lua" },
     { id = "lightnovelvf", name = "LightNovelVF",        site = "https://www.lightnovelvf.com",   lang = "fr",    version = "1.1.1", runtime = "lua" },
+    { id = "mydramanovel", name = "MyDramaNovel",        site = "https://mydramanovel.com",       lang = "en",    version = "0.1.0", runtime = "lua" },
+    { id = "wordrain",    name = "Wordrain",             site = "https://wordrain69.com",         lang = "en",    version = "0.2.0", runtime = "lua" },
     { id = "novelfire",   name = "NovelFire",            site = "https://novelfire.net",          lang = "en",    version = "1.1.0", runtime = "lua" },
     { id = "royalroad",   name = "Royal Road",           site = "https://www.royalroad.com",      lang = "en",    version = "1.0.0", runtime = "lua" },
     { id = "novelmania",  name = "Novel Mania",          site = "https://novelmania.com.br",      lang = "pt",    version = "0.2.0", runtime = "lua" },
@@ -37,10 +39,15 @@ local metas = {
     { id = "ranobehub",   name = "RanobeHub",            site = "https://ranobehub.org",          lang = "ru",    version = "0.1.0", runtime = "lua" },
     { id = "kakuyomu",    name = "Kakuyomu",             site = "https://kakuyomu.jp",            lang = "ja",    version = "0.1.0", runtime = "lua" },
     { id = "truyendichai", name = "TruyenDichAI",        site = "https://truyendich.space",       lang = "vi",    version = "0.1.0", runtime = "lua" },
+    { id = "lncrawler",   name = "LNCrawler",            site = "https://lncrawler.monster",      lang = "multi", version = "0.3.0", runtime = "lua" },
     { id = "69shu",       name = "69书吧",                   site = "https://www.69shu.xyz",         lang = "zh",    version = "1.5.0", runtime = "lua" },
 }
 
 local loaded = {}
+
+-- Sources du catalogue en ligne (Sefirah Source Hub) pas encore téléchargées : voir core/catalog.lua.
+local remote = {}
+function ExtMgr.setRemote(list) remote = type(list) == "table" and list or {} end
 
 -- Adresse enregistrée par l'utilisateur pour Anime-Sama (réglages de la source).
 do
@@ -79,6 +86,56 @@ function ExtMgr.init() end
 local ok_lfs, lfs = pcall(require, "libs/libkoreader-lfs")
 if not ok_lfs then lfs = require("lfs") end
 
+-- Extensions « déposées » : tout fichier extensions/<id>.lua qui n'est pas dans la
+-- table metas ci-dessus est détecté automatiquement, sans modifier ce fichier.
+-- Ses infos (id, name, site, lang, version, type, listMode, richList) sont lues dans
+-- l'extension elle-même ; l'icône est resources/sources/<id>.png.
+-- Seuls les fichiers inconnus sont chargés ici (les autres restent en chargement paresseux).
+do
+    local known = {}
+    for _, m in ipairs(metas) do known[m.id] = true end
+    local names = {}
+    local okd, iter, state, init = pcall(lfs.dir, _plugin_dir .. "/extensions")
+    if okd then
+        for f in iter, state, init do
+            local id = f:match("^([%w_%-]+)%.lua$")
+            if id and not known[id] then names[#names + 1] = id end
+        end
+    end
+    table.sort(names)
+    for _, id in ipairs(names) do
+        local ok, x = pcall(dofile, _plugin_dir .. "/extensions/" .. id .. ".lua")
+        if ok and type(x) == "table" and x.id == id then
+            loaded[id] = x
+            metas[#metas + 1] = {
+                id = id, name = x.name or id, site = x.site, lang = x.lang or "en",
+                version = x.version or "0.0.0", runtime = "lua",
+                type = x.type, listMode = x.listMode, richList = x.richList,
+            }
+        else
+            logger.warn("Sefirah: extension ignorée (id différent du nom de fichier ou erreur)", id, ok and "" or tostring(x))
+        end
+    end
+end
+
+-- Ajout à chaud d'une source reçue (sans redémarrer KOReader).
+function ExtMgr.addFile(id)
+    if not id:match("^[%w_%-]+$") then return false, "id" end
+    loaded[id] = nil
+    local ok, x = pcall(dofile, _plugin_dir .. "/extensions/" .. id .. ".lua")
+    if not (ok and type(x) == "table" and x.id == id) then
+        return false, ok and "id différent du nom de fichier" or tostring(x)
+    end
+    loaded[id] = x
+    local meta
+    for _, m in ipairs(metas) do if m.id == id then meta = m end end
+    if not meta then meta = { id = id }; metas[#metas + 1] = meta end
+    meta.name = x.name or id; meta.site = x.site; meta.lang = x.lang or "en"
+    meta.version = x.version or "0.0.0"; meta.runtime = "lua"
+    meta.type = x.type; meta.listMode = x.listMode; meta.richList = x.richList
+    return true
+end
+
 -- Une source est disponible si son fichier existe — sans charger le fichier.
 local function available(id)
     return lfs.attributes(_plugin_dir .. "/extensions/" .. id .. ".lua", "mode") == "file"
@@ -92,6 +149,9 @@ function ExtMgr.getMeta(id)
     for _, m in ipairs(metas) do
         if m.id == id then return m end
     end
+    for _, m in ipairs(remote) do
+        if m.id == id then return m end
+    end
     return nil
 end
 
@@ -100,6 +160,23 @@ function ExtMgr.available()
     local r = {}
     for _, m in ipairs(metas) do
         if available(m.id) then
+            local x = {}
+            for k, v in pairs(m) do x[k] = v end
+            r[#r + 1] = x
+        end
+    end
+    table.sort(r, function(a, b)
+        return tostring(a.name or a.id):lower() < tostring(b.name or b.id):lower()
+    end)
+    return r
+end
+
+-- Sources livrées + sources du catalogue en ligne pas encore sur la liseuse (marquées remote = true).
+local function with_remote()
+    local r, have = ExtMgr.available(), {}
+    for _, m in ipairs(r) do have[m.id] = true end
+    for _, m in ipairs(remote) do
+        if not have[m.id] and not available(m.id) then
             local x = {}
             for k, v in pairs(m) do x[k] = v end
             r[#r + 1] = x
@@ -155,7 +232,7 @@ end
 -- Langues présentes parmi les sources disponibles : { {code=, label=, count=}, ... }
 function ExtMgr.languages(all_sources)
     local counts, list = {}, {}
-    for _, m in ipairs(all_sources and ExtMgr.available() or ExtMgr.installed()) do
+    for _, m in ipairs(all_sources and with_remote() or ExtMgr.installed()) do
         local c = ExtMgr.langCode(m)
         -- Les sources multilingues (« multi ») n'ont pas d'entrée propre : elles
         -- restent visibles quel que soit le filtre de langue choisi.
@@ -222,7 +299,7 @@ end
 -- parmi les sources installées ou, avec all_sources, toutes les sources disponibles.
 function ExtMgr.kindCounts(all_sources)
     local c = { novels = 0, manga = 0 }
-    for _, m in ipairs(filter_by_lang(all_sources and ExtMgr.available() or ExtMgr.installed(), all_sources)) do
+    for _, m in ipairs(filter_by_lang(all_sources and with_remote() or ExtMgr.installed(), all_sources)) do
         local k = ExtMgr.kindOf(m.id)
         c[k] = c[k] + 1
     end
@@ -236,7 +313,7 @@ end
 
 -- Toutes les sources disponibles, filtrées par langue (onglet Sources).
 function ExtMgr.visibleAll()
-    return filter_by_kind(filter_by_lang(ExtMgr.available(), true))
+    return filter_by_kind(filter_by_lang(with_remote(), true))
 end
 
 -- Suffixe de titre « · FR/EN » quand un filtre est actif, sinon "".

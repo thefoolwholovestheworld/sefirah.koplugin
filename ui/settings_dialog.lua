@@ -186,6 +186,25 @@ local function categories(refresh)
         },
         {
             {
+                text     = T("Gros boutons du lecteur de roman : ") .. (Settings:get("reader_nav_buttons") ~= false and T("ACTIVÉ") or T("DÉSACTIVÉ")),
+                callback = function()
+                    Settings:set("reader_nav_buttons", Settings:get("reader_nav_buttons") == false)
+                    Settings:set("reader_nav_asked", true)
+                    refresh()
+                end,
+            },
+        },
+        {
+            {
+                text     = T("Popups des quêtes : ") .. on_off("quest_notifications"),
+                callback = function()
+                    Settings:toggle("quest_notifications")
+                    refresh()
+                end,
+            },
+        },
+        {
+            {
                 text     = T("Commentaires hors ligne (plus lent) : ") .. on_off("offline_comments"),
                 callback = function()
                     Settings:toggle("offline_comments")
@@ -463,6 +482,8 @@ end
 -- est la flèche de droite.)
 local CATEGORIES = {
     { "settings",    "Paramètres",       "Général, téléchargements, couvertures, traduction, manga", "set_general" },
+    -- COMMUNAUTÉ MASQUÉE (pas assez de monde) : pour la remettre, retirer le « -- » de la ligne ci-dessous.
+    -- { "community",   "Communauté",       "Fil de lecture, amis et messages", "set_general" },
     { "progression", "Quêtes & niveaux", "Progression, défis et succès de lecture", "set_stats" },
 }
 -- Sections regroupées dans « Paramètres » : { id dans categories(), titre de section }.
@@ -597,6 +618,7 @@ function SettingsDialog.build_rows()
     else
         rows = build_cards(P, function(id)
             -- « Quêtes & niveaux » ouvre directement le Centre de progression.
+            if id == "community" then require("ui.community").show(); return end
             if id == "progression" then require("core.quests").show(); return end
             _cat = id; _page = 1; rebuild()
         end)

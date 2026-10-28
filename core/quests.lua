@@ -215,7 +215,7 @@ local function defs(c, dlev, wlev, seed)
                  cur = math.min(cur, goal), goal = goal, done = cur >= goal }
     end
 
-    -- 10 quêtes par période, tirées dans des familles variées ; tirage figé jusqu'au renouvellement.
+    -- 4 quêtes par période, tirées dans des familles variées ; tirage figé jusqu'au renouvellement.
     local daily, weekly = RandomQuests.build(c, dlev, wlev, seed)
 
     local long = {}
@@ -277,7 +277,7 @@ end
 
 -- Petit message discret quand une quête est terminée ou qu'un niveau est franchi.
 local function announce(fresh, level_before, level_after)
-    if Settings:get("quest_notifications") == false then return end
+    if not Settings:get("quest_notifications") then return end
     local lines = {}
     for i, q in ipairs(fresh) do
         if i > 3 then lines[#lines + 1] = ((#fresh - 3) > 1 and T("+ %d autres quêtes") or T("+ %d autre quête")):format(#fresh - 3); break end

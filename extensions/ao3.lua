@@ -86,7 +86,7 @@ end
 
 -- ── HTTP helper ───────────────────────────────────────────────────────────────
 
--- Même identité de navigateur que scribblehub.lua : l'UA « KOReader » nu est
+-- Même identité de navigateur que 69shu.lua : l'UA « KOReader » nu est
 -- une cause probable de refus (403) côté AO3, qui se traduisait par une liste vide.
 local UA = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 "
     .. "(KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36"
@@ -541,12 +541,12 @@ end
 local Settings = require("sefirah_settings")
 
 local ext = {
-    review_cache_rev = 2,  -- change quand le format des avis change (invalide le cache disque)
+    review_cache_rev = 3,  -- change quand le format des avis change (invalide le cache disque)
     id      = "ao3",
     name    = "Archive of Our Own",
     site    = BASE,
     lang    = "multi",
-    version = "2.1.0",
+    version = "2.2.0",
     popularFilters = POPULAR_FILTERS,
     searchFilters  = SEARCH_FILTERS,
     searchHint = T("Titre, auteur, tag…"),
@@ -1022,8 +1022,23 @@ local function comment_avatar(block)
 end
 
 local function parse_comments(html)
-    local starts = {}
-    for pos in html:gmatch('()<li[^>]-id="comment_%d+"') do starts[#starts + 1] = pos end
+    local starts, hierarchy, stack = {}, {}, {}
+    for pos, tag, attrs in html:gmatch('()<(/?[%w]+)([^>]*)>') do
+        if tag == "li" then
+            local id = attrs:match('id="comment_(%d+)"')
+            local parent, depth = nil, 0
+            for _, entry in ipairs(stack) do
+                if entry then parent, depth = entry, depth + 1 end
+            end
+            stack[#stack + 1] = id or false
+            if id then
+                starts[#starts + 1] = pos
+                hierarchy[pos] = { id = id, parent_id = parent, depth = depth }
+            end
+        elseif tag == "/li" then
+            stack[#stack] = nil
+        end
+    end
     local reviews = {}
     for i, pos in ipairs(starts) do
         local block = html:sub(pos, (starts[i + 1] or (#html + 1)) - 1)
@@ -1037,7 +1052,9 @@ local function parse_comments(html)
             body = body:gsub('<br[^>]*/?>%s*', '\n'):gsub('</p>%s*', '\n\n')
             local text = strip_tags(body)
             if text ~= "" then
-                reviews[#reviews + 1] = { author = author, content = text, likes = 0, dislikes = 0,
+                local h = hierarchy[pos]
+                reviews[#reviews + 1] = { id = h.id, parent_id = h.parent_id, depth = h.depth,
+                                           author = author, content = text, likes = 0, dislikes = 0,
                                            avatar = comment_avatar(block:sub(1, (block:find("<blockquote", 1, true) or #block))) }
             end
         end

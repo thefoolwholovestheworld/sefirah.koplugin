@@ -126,11 +126,17 @@ local GEAR_BTN_SIZE = Screen:scaleBySize(52)
 -- ScrollTextWidget DOIVENT utiliser cette même constante pour rester
 -- cohérentes entre elles.
 local NOVEL_TITLE_ROW_H = 0 -- supprimé : aucun titre de roman gris au-dessus de l’indicateur
-local _text_area_h  = P.SUB_H - NAV_BTN_H - PAGE_IND_H
+local function nav_buttons_on()
+    return Settings:get("reader_nav_buttons") ~= false
+end
+-- Hauteur de la zone de texte : sans les gros boutons du bas, le texte récupère leur place.
+local function base_text_area_h()
+    return P.SUB_H - (nav_buttons_on() and NAV_BTN_H or 0) - PAGE_IND_H
+end
 local _title_extra_h = 0
 
 local function reader_text_area_h()
-    return math.max(Screen:scaleBySize(100), _text_area_h - _title_extra_h)
+    return math.max(Screen:scaleBySize(100), base_text_area_h() - _title_extra_h)
 end
 
 local function clean_reader_title(title)
@@ -709,6 +715,9 @@ local function make_page_indicator(current_page, total_pages, chapter_marks, on_
 end
 
 local function make_nav_row(chapter_idx, total)
+    if not nav_buttons_on() then
+        return require("ui/widget/verticalspan"):new{ width = 0 }
+    end
     local has_prev = get_adjacent_index(-1) ~= nil
     local has_next = get_adjacent_index(1) ~= nil
     local half_w = math.floor(P.W / 2)
@@ -1567,6 +1576,29 @@ local function push_comments_heading_to_next_page(scroll_widget)
     tw:free()
     tw:init()
 end
+-- Journal des erreurs du lecteur : sefirah/reader_last_error.txt (dossier des réglages de KOReader).
+-- Un tourne-page ne doit JAMAIS laisser une page blanche : toute erreur est notée ici, puis ignorée.
+local function reader_log(where, err)
+    pcall(function() logger.err("Sefirah lecteur :", where, tostring(err)) end)
+    pcall(function()
+        local dir = require("datastorage"):getSettingsDir() .. "/sefirah"
+        local ok_lfs, lfs = pcall(require, "libs/libkoreader-lfs")
+        if ok_lfs and lfs then pcall(lfs.mkdir, dir) end
+        local f = io.open(dir .. "/reader_last_error.txt", "ab")
+        if f then
+            local c = _ctx and _ctx.chapters and _ctx.chapters[_ctx.index]
+            f:write(os.date("%Y-%m-%d %H:%M:%S"), "  ", tostring(where), "\n",
+                "source=", tostring(_ctx and _ctx.source_id), "  chapitre=", tostring(c and (c.path or c.sourceUrl)), "\n",
+                tostring(err), "\n\n")
+            f:close()
+        end
+    end)
+end
+local function guarded(where, fn)
+    local ok, err = xpcall(fn, debug.traceback)
+    if not ok then reader_log(where, err) end
+    return ok
+end
 -- force_flash : voir le commentaire de toggle_night_mode()/reapply_reader_settings()
 -- plus bas — force un rafraîchissement e-ink complet ("flashui") au lieu du
 -- "partial" habituel utilisé pour les tourne-pages classiques.
@@ -1812,15 +1844,15 @@ local function open_index(index, resume, force_flash)
         -- déplacement réel, quelle que soit son origine (tap, swipe, bouton,
         -- clavier, etc.). On met donc l'indicateur à jour à cet endroit.
         _scroll_w.scroll_callback = function()
-            cache_current_position()
+            guarded("cache_current_position", cache_current_position)
             if refresh_page_indicator then
                 refresh_page_indicator()
             end
             if refresh_comment_icons then
-                refresh_comment_icons()
+                guarded("refresh_comment_icons", refresh_comment_icons)
             end
             if refresh_avatar_overlays then
-                refresh_avatar_overlays()
+                guarded("refresh_avatar_overlays", refresh_avatar_overlays)
             end
         end
 
@@ -1858,11 +1890,13 @@ local function open_index(index, resume, force_flash)
                 return true -- position introuvable : on ignore, on ne devine pas
             end
             local x = ges.pos.x
-            if x < Screen:getWidth() / 2 then
-                ReaderView.prevPage()
-            else
-                ReaderView.nextPage()
-            end
+            guarded("tap page", function()
+                if x < Screen:getWidth() / 2 then
+                    ReaderView.prevPage()
+                else
+                    ReaderView.nextPage()
+                end
+            end)
             return true
         end
 
@@ -1890,7 +1924,15 @@ local function open_index(index, resume, force_flash)
             args = function(selected_text)
                 local tw = _scroll_w and _scroll_w.text_widget
                 local word = tostring(selected_text or ""):gsub("^%s+", ""):gsub("%s+$", "")
-                UIManager:nextTick(function()
+                -- Comme dans KOReader : le mot reste d'abord surligné un court instant,
+                -- PUIS le dictionnaire s'ouvre (avant, il s'ouvrait aussitôt et couvrait le surlignage).
+                pcall(function()
+                    if tw and tw.redrawHighlight then tw:redrawHighlight() end
+                    if _panel and _scroll_w and _scroll_w.dimen then
+                        UIManager:setDirty(_panel, "ui", _scroll_w.dimen)
+                    end
+                end)
+                UIManager:scheduleIn(0.4, function()
                     if word ~= "" then
                         ReaderView.lookupWord(word)
                     end
@@ -1999,6 +2041,8 @@ local function save_current_progress()
     notify_detail_progress()
 end
 
+local function save_progress_safe() guarded("save_current_progress", save_current_progress) end
+
 -- Reconstruit les rangées autour du widget de défilement (même widget, donc
 -- même position de lecture) pour que l'indicateur de page affiche la bonne
 -- valeur après un simple défilement — sans re-télécharger ni re-parser le chapitre.
@@ -2063,24 +2107,51 @@ refresh_page_indicator = function()
     _panel:swapBody(body, chapter_close_guard, true, _nav, close_plugin_from_swipe)
 end
 
+do
+    local refresh_impl = refresh_page_indicator
+    refresh_page_indicator = function()
+        local ok, err = xpcall(refresh_impl, debug.traceback)
+        if ok then return end
+        reader_log("refresh_page_indicator", err)
+        -- Repli : on remet au moins le texte à l'écran, sans icônes ni pdp superposées.
+        pcall(function()
+            if not _panel or not _ctx or not _scroll_w then return end
+            local chapter = _ctx.chapters[_ctx.index]
+            local title = chapter and (chapter.name or chapter.title) or (T("Chapitre ") .. tostring(_ctx.index))
+            local cur_page, total_pages = compute_page_progress()
+            local body = VerticalGroup:new{
+                align = "left",
+                make_title_row(title),
+                P.hairline(),
+                P.contentFrame({ HorizontalGroup:new{
+                    HorizontalSpan:new{ width = text_margin() }, _scroll_w,
+                    HorizontalSpan:new{ width = text_margin() } } }, reader_text_area_h()),
+                make_page_indicator(cur_page, total_pages, nil, nil),
+                make_nav_row(_ctx.index, #_ctx.chapters),
+            }
+            _panel:swapBody(body, chapter_close_guard, true, _nav, close_plugin_from_swipe)
+        end)
+    end
+end
+
 -- onScrollDown()/onScrollUp() renvoient true uniquement si le widget a pu
 -- défiler ; nil/false = on est déjà en bas/haut → on change de chapitre.
 function ReaderView.nextPage()
     if _scroll_w and _scroll_w:onScrollDown() then
-        save_current_progress()
+        save_progress_safe()
         return
     end
-    save_current_progress()
+    save_progress_safe()
     local idx = get_adjacent_index(1)
     if idx then open_index(idx, nil) end
 end
 
 function ReaderView.prevPage()
     if _scroll_w and _scroll_w:onScrollUp() then
-        save_current_progress()
+        save_progress_safe()
         return
     end
-    save_current_progress()
+    save_progress_safe()
     local idx = get_adjacent_index(-1)
     if idx then open_index(idx, nil) end
 end
@@ -2090,14 +2161,14 @@ function ReaderView.firstPage()
     if not _scroll_w then return end
     local guard = 0
     while guard < 2000 and _scroll_w:onScrollUp() do guard = guard + 1 end
-    save_current_progress()
+    save_progress_safe()
 end
 
 function ReaderView.lastPage()
     if not _scroll_w then return end
     local guard = 0
     while guard < 2000 and _scroll_w:onScrollDown() do guard = guard + 1 end
-    save_current_progress()
+    save_progress_safe()
 end
 
 -- Boutons du bas : navigation directe selon le numéro du chapitre,
@@ -2106,7 +2177,7 @@ function ReaderView.prevChapter()
     if not _ctx or not _ctx.chapters or not _ctx.index then return end
     local idx = get_adjacent_index(-1)
     if not idx then return end
-    save_current_progress()
+    save_progress_safe()
     open_index(idx, nil)
 end
 
@@ -2114,7 +2185,7 @@ function ReaderView.nextChapter()
     if not _ctx or not _ctx.chapters or not _ctx.index then return end
     local idx = get_adjacent_index(1)
     if not idx then return end
-    save_current_progress()
+    save_progress_safe()
     open_index(idx, nil)
 end
 
@@ -2434,6 +2505,27 @@ function ReaderView.open(ctx, start_index)
         resume = Cache.getChapterProgress(ctx.source_id, ctx.novel.path or "", key)
     end
     open_index(idx, resume)
+    -- Première ouverture du lecteur : on demande une fois si on garde les deux gros boutons du bas.
+    -- Le choix reste modifiable dans Paramètres › Général.
+    if not Settings:get("reader_nav_asked") then
+        UIManager:nextTick(function()
+            local ConfirmBox = require("ui/widget/confirmbox")
+            UIManager:show(ConfirmBox:new{
+                text = T("Garder les deux gros boutons « Chap. précédent / suivant » en bas du lecteur ?\n\nTu pourras changer ça plus tard dans Paramètres."),
+                ok_text = T("Garder"),
+                cancel_text = T("Retirer"),
+                ok_callback = function()
+                    Settings:set("reader_nav_buttons", true)
+                    Settings:set("reader_nav_asked", true)
+                end,
+                cancel_callback = function()
+                    Settings:set("reader_nav_buttons", false)
+                    Settings:set("reader_nav_asked", true)
+                    pcall(reapply_reader_settings)
+                end,
+            })
+        end)
+    end
 end
 
 -- ── Avis par paragraphe (novelfrance.lua) ────────────────────────────────

@@ -25,6 +25,11 @@ local DEFAULTS = {
     -- Sources installées par l'utilisateur (onglet Sources). Une source non
     -- installée n'apparaît pas dans Parcourir. Vide par défaut.
     installed_sources = {},
+    -- Catalogue en ligne (Sefirah Source Hub) : adresse du site, dernier manifeste lu,
+    -- et version des sources téléchargées depuis le Hub (pour proposer les mises à jour).
+    hub_url = "https://thefoolwholovestheworld.github.io/Sefirah-Source-Hub/",
+    hub_cache = {},
+    hub_versions = {},
     chapters_ascending = false,
     -- Derniers filtres choisis dans Parcourir, par source : { [store] = { [clé] = id } }
     -- (store = source_id, ou source_id..":search" pour la recherche).
@@ -66,6 +71,12 @@ local DEFAULTS = {
     dl_ahead      = 3,
     dl_autoresume = true,
     dl_notify     = true,
+    -- Lecteur de roman : les deux gros boutons « Chap. précédent / suivant » en bas.
+    -- reader_nav_asked : la question posée à la 1re ouverture du lecteur a déjà reçu une réponse.
+    reader_nav_buttons = true,
+    reader_nav_asked   = false,
+    -- Petits popups de quêtes / succès / niveau pendant la lecture : désactivés par défaut.
+    quest_notifications = false,
     -- Alertes « nouveau chapitre » : "ask" (demander à chaque favori), "all", "none".
     newch_mode = "ask",
     newch_novels = {},
