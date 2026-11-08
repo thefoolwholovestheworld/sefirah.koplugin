@@ -55,7 +55,6 @@ local function round5(v) return math.max(5, 5 * math.floor(v / 5 + 0.5)) end
 local function make(period, c, level, seed)
     local rand = rng(seed)
     local daily = period == "daily"
-    local p = daily and "daily_" or "weekly_"
     local L = math.max(1, tonumber(level) or 1)
     local lf = math.min(2.5, 1 + 0.08 * (L - 1))   -- facteur de niveau sur les objectifs
 

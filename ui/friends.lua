@@ -84,8 +84,8 @@ function Friends.confirmRemove(name, redraw)
 end
 
 -- Appui sur un ami dans le classement des amis.
-function Friends.manage(name, level, redraw)
-    choose(name .. "  ·  " .. T("Niv. %d"):format(tonumber(level) or 1), {
+function Friends.manage(name, level, redraw, stats)
+    choose(name .. "  ·  " .. T("Niv. %d"):format(tonumber(level) or 1) .. (stats and ("\n" .. stats) or ""), {
         { T("Retirer des amis"), function() Friends.confirmRemove(name, redraw) end },
         { T("Fermer") },
     })

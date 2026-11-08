@@ -142,6 +142,55 @@ function Catalog.updateFor(id)
     return nil
 end
 
+-- Télécharge l'icône d'une source du catalogue (resources/sources/<id>.png) si elle manque.
+function Catalog.fetchIcon(m)
+    if type(m) ~= "table" or not m.hub_icon or not tostring(m.id):match("^[%w_%-]+$") then return false end
+    local lfs = require("libs/libkoreader-lfs")
+    local dest = _plugin_dir .. "/resources/sources/" .. m.id:lower() .. ".png"
+    if lfs.attributes(dest, "mode") == "file" then return false end
+    local img = require("core.net").get(m.hub_icon, { timeout = 10, deadline = 15, no_gzip = true })
+    if img and #img > 100 and #img < 500000 then
+        local fi = io.open(dest, "wb")
+        if fi then fi:write(img); fi:close(); return true end
+    end
+    return false
+end
+
+-- Télécharge les icônes manquantes de tout le catalogue, pour qu'elles s'affichent dans l'onglet
+-- Sources avant même l'installation. budget = secondes maximum (le reste vient au prochain appel).
+function Catalog.fetchIcons(budget)
+    local t0 = os.time()
+    for _, m in ipairs(Catalog.entries()) do
+        if os.time() - t0 >= (budget or 20) then break end
+        pcall(Catalog.fetchIcon, m)
+    end
+end
+
+-- Réinstalle les sources cochées dont le fichier a disparu (par ex. après une mise à jour du
+-- plugin qui a remplacé le dossier). Une source supprimée volontairement n'est pas concernée :
+-- sa suppression la retire aussi de la liste. budget = secondes maximum. Renvoie le nombre rétabli.
+function Catalog.restoreInstalled(budget)
+    local S = settings()
+    local list = S and S:get("installed_sources")
+    if type(list) ~= "table" or #list == 0 then return 0 end
+    local lfs = require("libs/libkoreader-lfs")
+    local by_id = {}
+    for _, m in ipairs(Catalog.entries()) do by_id[m.id] = m end
+    local t0, n = os.time(), 0
+    local ids = {}
+    for _, v in ipairs(list) do ids[#ids + 1] = v end
+    for _, id in ipairs(ids) do
+        if os.time() - t0 >= (budget or 60) then break end
+        local m = by_id[id]
+        if m and tostring(id):match("^[%w_%-]+$")
+           and lfs.attributes(_plugin_dir .. "/extensions/" .. id .. ".lua", "mode") ~= "file" then
+            local ok = pcall(Catalog.install, m)
+            if ok and lfs.attributes(_plugin_dir .. "/extensions/" .. id .. ".lua", "mode") == "file" then n = n + 1 end
+        end
+    end
+    return n
+end
+
 -- Télécharge, vérifie et installe une source du catalogue. Renvoie true — ou nil, message.
 function Catalog.install(m)
     if type(m) ~= "table" or not m.id or not m.id:match("^[%w_%-]+$") or not m.hub_file then
@@ -187,15 +236,7 @@ function Catalog.install(m)
         S:set("hub_versions", v)
     end
     -- Icône : facultative (champ « icon » du manifeste), sans conséquence si elle échoue.
-    if m.hub_icon and lfs.attributes(_plugin_dir .. "/resources/sources/" .. m.id:lower() .. ".png", "mode") ~= "file" then
-        pcall(function()
-            local img = Net.get(m.hub_icon, { timeout = 10, deadline = 15, no_gzip = true })
-            if img and #img > 100 and #img < 500000 then
-                local fi = io.open(_plugin_dir .. "/resources/sources/" .. m.id:lower() .. ".png", "wb")
-                if fi then fi:write(img); fi:close() end
-            end
-        end)
-    end
+    pcall(Catalog.fetchIcon, m)
     return true
 end
 

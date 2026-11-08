@@ -36,6 +36,7 @@ local _source_id    = nil
 local _novel_info   = nil
 local _all_chapters = {}
 local _page         = 1
+local _follow_pending = false  -- true : au prochain dessin, aller à la page du chapitre en cours
 local _vol_filter   = nil  -- numéro de tome affiché dans l'onglet Chapitres (nil = tous)
 local _vol_path     = nil  -- roman auquel se rapporte _vol_filter
 local _detail_tab   = "details"  -- "details" | "chapters" | "reviews"
@@ -575,6 +576,16 @@ local function build_details_rows(info)
 end
 
 -- ── Lignes de l'onglet Chapitres ─────────────────────────────────────────────
+-- Index (dans _all_chapters) du chapitre en cours de lecture, ou nil.
+local function current_chapter_index(info)
+    local progress = Cache.getProgress(_source_id, info.path or "")
+    if not (progress and progress.chapter_path) then return nil end
+    for i, ch in ipairs(_all_chapters) do
+        if (ch.path or ch.sourceUrl or "") == progress.chapter_path then return i end
+    end
+    return nil
+end
+
 -- Renvoie rows, nav où nav est le descripteur de barre de pagination (ou nil).
 
 local function chapter_number_value(ch, fallback)
@@ -1576,6 +1587,18 @@ local function build_chapters_rows(info)
     local hide_nav = (_source_id == "ao3")
     local per_page = (use_nav and not hide_nav) and per_page_nav or per_page_full
     local max_pages = math.max(1, math.ceil(total_ch / per_page))
+    -- Option « la liste suit la lecture » : on ouvre la page qui contient le chapitre en cours.
+    if _follow_pending then
+        _follow_pending = false
+        if Settings:get("chapters_follow_reading") ~= false and total_ch > 0 then
+            local ci = current_chapter_index(info)
+            if ci then
+                for pos, i in ipairs(indices) do
+                    if i == ci then _page = math.ceil(pos / per_page); break end
+                end
+            end
+        end
+    end
     if _page > max_pages then _page = max_pages end
 
     if total_ch == 0 then
@@ -2273,6 +2296,7 @@ function Detail.rebuild(info, partial)
     if not tab_is_visible(_detail_tab) then
         _detail_tab = "chapters"
         _page = 1
+        _follow_pending = true
     end
 
     local rows, nav
@@ -2308,6 +2332,7 @@ function Detail.rebuild(info, partial)
         _exp_cache.set = nil   -- les fichiers EPUB ont pu être supprimés entre-temps
         _detail_tab = id
         _page = 1
+        _follow_pending = (id == "chapters")
         _reviews_view_page = 1
 
         -- Ne remplace jamais l'arbre de widgets pendant le traitement du tap.
@@ -2574,6 +2599,7 @@ end
 -- nécessaire.
 function Detail.refreshChapterProgress()
     if not _panel or not _novel_info or _detail_tab ~= "chapters" then return end
+    _follow_pending = true
     Detail.rebuild(_novel_info, true)
 end
 
@@ -2587,6 +2613,7 @@ function Detail.fetch(source_id, path, force_refresh)
     _all_chapters = {}
     _novel_info   = nil
     _page         = 1
+    _follow_pending = true
     _detail_tab   = "details"
     -- Préférence persistée (cf. sefirah_settings.lua) : ne PAS remettre à false ici
     -- à chaque nouveau roman ouvert, sinon la sauvegarde n'aurait aucun

@@ -18,30 +18,11 @@ local _plugin_dir = _core_dir:match("^(.+)/[^/]+$") or _core_dir
 -- (JS) que des requêtes HTTP brutes en Lua ne peuvent pas résoudre — pas de
 -- contournement possible sans moteur JS embarqué, qui n'existe pas dans
 -- KOReader. AO3 est de retour (extensions/ao3.lua, avec filtres).
-local metas = {
-    { id = "novelfrance", name = "NovelFrance",          site = "https://novelfrance.fr",         lang = "fr",    version = "1.0.0", runtime = "lua" },
-    { id = "lightnovelvf", name = "LightNovelVF",        site = "https://www.lightnovelvf.com",   lang = "fr",    version = "1.1.1", runtime = "lua" },
-    { id = "mydramanovel", name = "MyDramaNovel",        site = "https://mydramanovel.com",       lang = "en",    version = "0.1.0", runtime = "lua" },
-    { id = "wordrain",    name = "Wordrain",             site = "https://wordrain69.com",         lang = "en",    version = "0.2.0", runtime = "lua" },
-    { id = "novelfire",   name = "NovelFire",            site = "https://novelfire.net",          lang = "en",    version = "1.1.0", runtime = "lua" },
-    { id = "royalroad",   name = "Royal Road",           site = "https://www.royalroad.com",      lang = "en",    version = "1.0.0", runtime = "lua" },
-    { id = "novelmania",  name = "Novel Mania",          site = "https://novelmania.com.br",      lang = "pt",    version = "0.2.0", runtime = "lua" },
-    { id = "skynovels",   name = "SkyNovels",            site = "https://www.skynovels.net",     lang = "es",    version = "1.0.0", runtime = "lua" },
-    { id = "ao3",         name = "Archive of Our Own",   site = "https://archiveofourown.org",    lang = "multi",    version = "2.1.0", runtime = "lua", listMode = true, richList = true },
-    { id = "wattpad",     name = "Wattpad",              site = "https://www.wattpad.com",        lang = "multi",    version = "1.1.0", runtime = "lua" },
-    { id = "mangadex",    name = "MangaDex",             site = "https://mangadex.org",           lang = "multi",    version = "1.0.1", runtime = "lua", type = "manga" },
-    { id = "webtoon",     name = "WEBTOON",             site = "https://www.webtoons.com/",    lang = "multi", version = "0.4.0", runtime = "lua", type = "manga" },
-    { id = "mangapill",   name = "MangaPill",            site = "https://mangapill.com",          lang = "en",    version = "0.1.0", runtime = "lua", type = "manga" },
-    { id = "animesama",   name = "Anime-Sama",   site = "https://anime-sama.to",          lang = "fr",    version = "0.2.0", runtime = "lua", type = "manga" },
-    { id = "inmanga",     name = "InManga",              site = "https://inmanga.com",            lang = "es",    version = "0.2.1", runtime = "lua", type = "manga" },
-    { id = "mangaball",   name = "MangaBall",             site = "https://mangaball.com",           lang = "multi", version = "0.5.0", runtime = "lua", type = "manga" },
-    { id = "fmteam",      name = "FMTeam",               site = "https://fmteam.fr",              lang = "fr",    version = "0.2.0", runtime = "lua", type = "manga" },
-    { id = "ranobehub",   name = "RanobeHub",            site = "https://ranobehub.org",          lang = "ru",    version = "0.1.0", runtime = "lua" },
-    { id = "kakuyomu",    name = "Kakuyomu",             site = "https://kakuyomu.jp",            lang = "ja",    version = "0.1.0", runtime = "lua" },
-    { id = "truyendichai", name = "TruyenDichAI",        site = "https://truyendich.space",       lang = "vi",    version = "0.1.0", runtime = "lua" },
-    { id = "lncrawler",   name = "LNCrawler",            site = "https://lncrawler.monster",      lang = "multi", version = "0.3.0", runtime = "lua" },
-    { id = "69shu",       name = "69书吧",                   site = "https://www.69shu.xyz",         lang = "zh",    version = "1.5.0", runtime = "lua" },
-}
+-- Aucune source n'est livrée avec le plugin : elles se téléchargent depuis Sefirah Source Hub
+-- (onglet Sources › « Actualiser le catalogue », Wi-Fi requis) et sont posées dans extensions/.
+-- Chaque fichier déposé est détecté automatiquement (voir plus bas) : id, nom, site, langue et
+-- version sont lus dans la source elle-même.
+local metas = {}
 
 local loaded = {}
 
@@ -199,8 +180,10 @@ local function installed_set()
     return set
 end
 
+-- Installée = cochée dans les réglages ET fichier présent : si le .lua a été supprimé, la source
+-- n'est plus « installée » (plus d'engrenage fantôme), elle redevient téléchargeable depuis le Hub.
 function ExtMgr.isInstalled(id)
-    return installed_set()[id] == true
+    return installed_set()[id] == true and available(id)
 end
 
 function ExtMgr.installed()
@@ -335,6 +318,24 @@ function ExtMgr.install(id)
     for _, v in ipairs(Settings:get("installed_sources") or {}) do list[#list + 1] = v end
     list[#list + 1] = id
     Settings:set("installed_sources", list)
+    return true
+end
+
+-- Suppression réelle : efface le fichier de la source (elle reste re-téléchargeable depuis le Hub),
+-- la retire de la liste des sources installées et oublie sa version Hub.
+function ExtMgr.removeFile(id)
+    if not tostring(id):match("^[%w_%-]+$") then return false end
+    ExtMgr.uninstall(id)
+    loaded[id] = nil
+    local path = _plugin_dir .. "/extensions/" .. id .. ".lua"
+    if lfs.attributes(path, "mode") == "file" then
+        os.remove(path .. ".bak")
+        if not os.remove(path) then return false end
+    end
+    local Settings = require("sefirah_settings")
+    local v = {}
+    for k, x in pairs(Settings:get("hub_versions") or {}) do if k ~= id then v[k] = x end end
+    Settings:set("hub_versions", v)
     return true
 end
 

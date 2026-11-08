@@ -130,8 +130,6 @@ local function ramp(base, step, cap, level)
     if v >= 25 then v = 5 * math.floor(v / 5 + 0.5) end   -- chiffres ronds pour les grands objectifs
     return math.max(base, v)
 end
--- Récompense : +8 % par niveau, jusqu'à ×3.
-local function reward(base, level) return math.floor(base * math.min(3, 1 + 0.08 * (level - 1)) + 0.5) end
 local function lvl(v) return math.max(1, math.floor(n(v))) end
 local function s(k) return k > 1 and "s" or "" end
 

@@ -72,6 +72,14 @@ local function refresh_catalog(manual)
             UIManager:forceRePaint()
         end
         local ok, res = Catalog.refresh()
+        if ok then
+            -- Sources cochées dont le fichier a disparu (mise à jour du plugin) : on les rétablit,
+            -- puis on récupère les icônes manquantes pour l'onglet Sources.
+            local restored = 0
+            pcall(function() restored = Catalog.restoreInstalled(manual and 90 or 45) end)
+            pcall(Catalog.fetchIcons, manual and 60 or 20)
+            if restored > 0 then res = true end
+        end
         if info then UIManager:close(info) end
         if ok then
             if res or manual then rebuild() end
@@ -102,6 +110,29 @@ local function install_remote(m)
             msg(T("Installation impossible : ") .. tostring(err))
         end
     end)
+end
+
+-- Le Hub connaît-il cette source ? (alors on peut effacer le fichier : elle se re-télécharge depuis le site)
+local function in_hub(id)
+    for _, e in ipairs(Catalog.entries()) do if e.id == id then return true end end
+    return false
+end
+
+-- Supprime une source : fichier effacé si le Hub l'a en catalogue, sinon simple désinstallation.
+local function remove_source(m)
+    if in_hub(m.id) then ExtMgr.removeFile(m.id) else ExtMgr.uninstall(m.id) end
+    rebuild()
+end
+
+local function confirm_remove(m)
+    local hub = in_hub(m.id)
+    UIManager:show(ConfirmBox:new{
+        text = T("Supprimer la source ") .. m.name .. " ?\n\n" ..
+            (hub and T("Le fichier sera effacé de la liseuse. Tu pourras la re-télécharger depuis Sefirah Source Hub.")
+                 or T("Elle sera retirée de Parcourir (le fichier reste sur la liseuse, elle n'est pas dans le catalogue du Hub).")),
+        ok_text = T("Supprimer"),
+        ok_callback = function() remove_source(m) end,
+    })
 end
 
 local function close_all()
@@ -171,6 +202,9 @@ function Sources.ext_settings(meta)
         if ok and extra then for _, r in ipairs(extra) do table.insert(rows, r) end end
     end
 
+    table.insert(rows, P.makeRow(T("Supprimer la source"), {
+        callback = function() close_settings(); confirm_remove(meta) end,
+    }))
     table.insert(rows, P.makeRow(T("← Retour"), { callback = close_settings }))
     local p = P.showSubPanel(meta.name .. T(" — Réglages"), rows, close_settings, close_all)
     sp[1] = p
@@ -200,7 +234,7 @@ function Sources.build_rows()
         table.insert(rows, P.hairline())
     end
     if #all == 0 then
-        table.insert(rows, P.makeRow(_search and T("(aucune extension trouvée)") or T("(aucune source native)"),
+        table.insert(rows, P.makeRow(_search and T("(aucune extension trouvée)") or T("Aucune source. Connecte la liseuse au Wi-Fi puis touche « Actualiser le catalogue »."),
             { dim = true, callback = function() end }))
     else
         for _, meta in ipairs(all) do
@@ -234,8 +268,7 @@ function Sources.build_rows()
                     end,
                     hold_callback = function()
                         if not is_installed then return end
-                        ExtMgr.uninstall(m.id)
-                        rebuild()
+                        confirm_remove(m)
                     end,
                 }
             ))

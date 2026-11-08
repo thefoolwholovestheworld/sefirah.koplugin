@@ -199,12 +199,43 @@ local function note_creator(res)
     end
 end
 
+-- Stats partagées avec les autres joueurs : toujours publiques (plus d'option privée).
+local function stats_snapshot()
+    local snap = { public = true, sig = "0" }
+    local s = {}
+    local okq, Q = pcall(function() return require("core.quests").getProgress() end)
+    if okq and type(Q) == "table" then
+        s.pages      = math.floor(tonumber(Q.pages) or 0)
+        s.chapters   = math.floor(tonumber(Q.chapters) or 0)
+        s.streak     = math.floor(tonumber(Q.streak) or 0)
+        s.best_streak = math.floor(tonumber(Q.best_streak) or 0)
+    end
+    if Settings:get("wpm_enabled") ~= false then
+        local okw, wv = pcall(function() return require("core.stats").wpm() end)
+        if okw and type(wv) == "table" then s.wpm = wv.week or wv.total end
+    end
+    snap.stats = s
+    snap.sig = string.format("1:%d:%d:%d:%d", s.pages or 0, s.chapters or 0, s.streak or 0, s.wpm or 0)
+    return snap
+end
+-- À envoyer ? Oui si le réglage ou les chiffres ont changé (au plus toutes les 10 min pour les chiffres).
+local function stats_due(snap)
+    local synced = Settings:get("leaderboard_stats_synced")
+    if synced == nil and not snap.public then return false end
+    if tostring(synced) == snap.sig then return false end
+    if snap.public and synced ~= nil and synced ~= "0"
+       and os.time() - (tonumber(Settings:get("leaderboard_stats_sent_at")) or 0) < 600 then return false end
+    return true
+end
+
 local function sync_profile()
     local username = trim(Settings:get("leaderboard_username"))
     if username == "" or base_url() == "" then return false end
     local name_ok = Settings:get("leaderboard_username_synced") == username
     local avatar_cur = avatar_state()
-    if name_ok and not avatar_cur and not creator_check_due() then return true end
+    local snap = stats_snapshot()
+    local send_stats = stats_due(snap)
+    if name_ok and not avatar_cur and not creator_check_due() and not send_stats then return true end
     local res, err, code = request("POST", "/api/profile", {
         player_id = player_id(), player_token = player_token(), username = username,
     })
@@ -221,6 +252,17 @@ local function sync_profile()
         if cur == "none" or payload.avatar then
             local ares = request("POST", "/api/profile", payload)
             if ares and ares.ok then Settings:set("leaderboard_avatar_synced", cur) end
+        end
+    end
+    -- Stats publiques (envoi séparé : un échec ne bloque ni le pseudo ni la photo).
+    if send_stats then
+        local payload = { player_id = player_id(), player_token = player_token(), username = username,
+                          stats_public = snap.public }
+        if snap.public then payload.stats = snap.stats end
+        local sres = request("POST", "/api/profile", payload)
+        if sres and sres.ok then
+            Settings:set("leaderboard_stats_synced", snap.sig)
+            Settings:set("leaderboard_stats_sent_at", os.time())
         end
     end
     return true

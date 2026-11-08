@@ -44,12 +44,20 @@ local MIN_SEC           = 3    -- en deçà, page traversée sans être lue
 local BUFFER_MAX        = 12   -- pages accumulées avant écriture d'un lot
 local GROW_RATIO        = 1.10 -- book.pages n'est réécrit qu'au-delà de +10 % de chapitres
 
+local WPM_OLD_PATH = DataStorage:getSettingsDir() .. "/sefirah_wpm.lua"   -- ancienne mesure (moyenne par chapitre, imprécise) : abandonnée
+local WPM_PATH = DataStorage:getSettingsDir() .. "/sefirah_wpm2.lua"      -- mesure exacte (mots réellement affichés par page)
+local WPM_MAX  = 900   -- au-delà (mots/min), la page a été survolée et non lue : ignorée
+local WPP_LEGACY = 200   -- mots par page supposés pour l'historique lu avant la mesure (estimation)
+local LEGACY_MIN_SEC = 30  -- historique : une page tournée en moins de 30 s compte 30 s (≈ 400 mots/min max, évite de surestimer en survolant)
+local LEGACY_UNTIL   = 0    -- 0 = estimation de l'ancien historique désactivée (les anciennes données n'ont pas le nombre de mots : impossible d'être précis)
+
 local Stats = {}
 
 local session  = nil   -- { key, id_book, page, total_pages, start_ts }
 local buffer   = {}    -- lignes page_stat_data en attente d'écriture
 local book_ids = {}    -- cache clé_roman -> id_book
 local conn     = nil
+local wpm_pending = {}  -- date -> { w = mots, s = secondes } en attente d'écriture
 local disabled = false
 
 -- ── Connexion ────────────────────────────────────────────────────────────────
@@ -175,9 +183,39 @@ local function known_books()
     return known
 end
 
+-- ── Vitesse de lecture ───────────────────────────────────────────────────────
+-- Mots lus et temps passé, cumulés par jour dans settings/sefirah_wpm.lua.
+local function add_wpm(words, secs, ts)
+    local date = os.date("%Y-%m-%d", ts)
+    local d = wpm_pending[date]
+    if not d then d = { w = 0, s = 0 }; wpm_pending[date] = d end
+    d.w = d.w + words
+    d.s = d.s + secs
+end
+
+local function flush_wpm()
+    if next(wpm_pending) == nil then return end
+    local pending = wpm_pending
+    wpm_pending = {}
+    pcall(function()
+        local LuaSettings = require("luasettings")
+        local f    = LuaSettings:open(WPM_PATH)
+        local days = f:readSetting("days") or {}
+        for date, v in pairs(pending) do
+            local d = days[date] or { w = 0, s = 0 }
+            d.w = d.w + math.floor(v.w + 0.5)
+            d.s = d.s + v.s
+            days[date] = d
+        end
+        f:saveSetting("days", days)
+        f:flush()
+    end)
+end
+
 -- ── Écriture par lots ────────────────────────────────────────────────────────
 
 local function write_buffer()
+    flush_wpm()
     if #buffer == 0 then return end
     local c = get_conn()
     if not c then buffer = {} ; return end
@@ -211,12 +249,16 @@ end
 -- Range la page courante dans le tampon (aucune I/O ici).
 local function buffer_session(now)
     if not session then return end
-    local duration = (now or os.time()) - session.start_ts
-    if duration < MIN_SEC then return end
-    if duration > MAX_SEC then duration = MAX_SEC end
+    local raw = (now or os.time()) - session.start_ts
+    if raw < MIN_SEC then return end
+    local duration = raw > MAX_SEC and MAX_SEC or raw
     buffer[#buffer + 1] = {
         session.id_book, session.page, session.start_ts, duration, session.total_pages,
     }
+    -- Vitesse : seulement les pages vraiment lues (ni liseuse en veille, ni page survolée).
+    if session.wpp and session.wpp > 0 and raw <= MAX_SEC and session.wpp / raw * 60 <= WPM_MAX then
+        add_wpm(session.wpp, raw, session.start_ts)
+    end
     if #buffer >= BUFFER_MAX then write_buffer() end
 end
 
@@ -244,7 +286,8 @@ end
 -- temps passé sur la précédente.
 -- @param ctx table du lecteur (_ctx) : source_id, novel, chapters, index
 -- @param page_in_chapter numéro de page dans le chapitre courant
-function Stats.track(ctx, page_in_chapter)
+-- @param words_per_page mots réellement affichés sur cette page (optionnel, sert à la vitesse de lecture)
+function Stats.track(ctx, page_in_chapter, words_per_page)
     if disabled then return end
     local ok, err = pcall(function()
         if not ctx or not ctx.novel or not ctx.chapters then return end
@@ -295,6 +338,7 @@ function Stats.track(ctx, page_in_chapter)
             -- page_stat duplique chaque ligne au prorata de l'écart.
             total_pages = cached.pages,
             start_ts    = now,
+            wpp         = words_per_page,   -- mots estimés sur cette page (nil = non mesuré)
         }
 
         -- Un changement de chapitre est un bon moment pour vider le tampon :
@@ -465,8 +509,79 @@ function Stats.summary()
     return out
 end
 
+-- Historique lu avant la mesure des mots : les pages déjà enregistrées dans la base de KOReader
+-- (durée par page) sont converties en mots avec WPP_LEGACY. Seuls les jours absents de
+-- sefirah_wpm.lua sont estimés, donc rien n'est compté deux fois. Renvoie date -> { w, s }.
+local function legacy_wpm_days(measured)
+    local res = {}
+    local c = get_conn()
+    if not c then return res end
+    pcall(function()
+        local ids = {}
+        local known = known_books()
+        local st = c:prepare("SELECT id, md5 FROM book;")
+        local row = st:step()
+        while row do
+            if known[tostring(row[2])] then ids[#ids + 1] = string.format("%d", tonumber(row[1])) end
+            row = st:step()
+        end
+        st:close()
+        if #ids == 0 then return end
+        -- Pages vraiment lues : ni survolées (< MIN_SEC), ni plafonnées (>= MAX_SEC, liseuse probablement en veille).
+        local st2 = c:prepare(string.format([[
+            SELECT strftime('%%Y-%%m-%%d', start_time, 'unixepoch', 'localtime'), count(*),
+                   sum(CASE WHEN duration < %d THEN %d ELSE duration END)
+            FROM page_stat_data
+            WHERE id_book IN (%s) AND duration >= %d AND duration < %d
+            GROUP BY 1;
+        ]], LEGACY_MIN_SEC, LEGACY_MIN_SEC, table.concat(ids, ","), MIN_SEC, MAX_SEC))
+        local r = st2:step()
+        while r do
+            local date = tostring(r[1])
+            if not measured[date] then
+                res[date] = { w = (tonumber(r[2]) or 0) * WPP_LEGACY, s = tonumber(r[3]) or 0 }
+            end
+            r = st2:step()
+        end
+        st2:close()
+    end)
+    return res
+end
+
+--- Vitesse de lecture en mots/minute : { today, week, total, words } (nil si pas assez de données).
+function Stats.wpm()
+    Stats.flush()
+    local out = { words = 0 }
+    pcall(function()
+        local LuaSettings = require("luasettings")
+        local measured = LuaSettings:open(WPM_PATH):readSetting("days") or {}
+        local days = {}
+        for date, d in pairs(measured) do days[date] = d end
+        local msecs = 0
+        for _, d in pairs(measured) do msecs = msecs + (d.s or 0) end
+        if msecs < LEGACY_UNTIL then   -- (désactivé : LEGACY_UNTIL = 0)
+            for date, d in pairs(legacy_wpm_days(measured)) do days[date] = d end
+        end
+        local age = {}
+        for k = 0, 6 do age[day_str(k)] = k end
+        local tw, ts, ww, ws, dw, ds = 0, 0, 0, 0, 0, 0
+        for date, d in pairs(days) do
+            tw = tw + (d.w or 0); ts = ts + (d.s or 0)
+            local a = age[date]
+            if a then ww = ww + (d.w or 0); ws = ws + (d.s or 0) end
+            if a == 0 then dw = dw + (d.w or 0); ds = ds + (d.s or 0) end
+        end
+        local function rate(w, s) if s >= 60 and w > 0 then return math.floor(w / (s / 60) + 0.5) end end
+        out.today, out.week, out.total, out.words = rate(dw, ds), rate(ww, ws), rate(tw, ts), tw
+    end)
+    return out
+end
+
 function Stats.reset()
     Stats.stop()
+    wpm_pending = {}
+    pcall(os.remove, WPM_PATH)
+    pcall(os.remove, WPM_OLD_PATH)
     book_ids = {}
 end
 

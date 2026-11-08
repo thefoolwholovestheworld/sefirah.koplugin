@@ -63,6 +63,52 @@ local ReaderView = {}
 local _ctx        = nil   -- { source_id, ext, novel, chapters, index }
 local _panel       = nil
 local _scroll_w    = nil  -- ScrollTextWidget courant
+-- Mots réellement affichés sur la page courante (vitesse de lecture, cf. core/stats.lua).
+-- On lit les lignes visibles du TextBoxWidget (offset / end_offset = index de caractère dans
+-- le texte) et on compte les mots de cette tranche exacte : pas de moyenne par chapitre, la
+-- dernière page (plus courte) et les pages à gros paragraphes sont comptées justes.
+local _wc_cache = { text = nil, bytes = nil, cut = nil }
+local function char_bytes(text)
+    -- Tableau « index de caractère -> position d'octet » (construit une fois par chapitre).
+    if _wc_cache.text ~= text then
+        local bytes, n = {}, 0
+        for pos in text:gmatch("()[%z\1-\127\194-\244][\128-\191]*") do
+            n = n + 1
+            bytes[n] = pos
+        end
+        bytes[n + 1] = #text + 1
+        -- La section « Commentaires » de fin de chapitre ne se compte pas.
+        _wc_cache.text, _wc_cache.bytes = text, bytes
+        _wc_cache.cut = text:find("\nCommentaires\n", 1, true)
+    end
+    return _wc_cache.bytes
+end
+local function visible_words()
+    if Settings:get("wpm_enabled") == false then return nil end
+    local text = _scroll_w and _scroll_w.text
+    local tw = _scroll_w and _scroll_w.text_widget
+    if type(text) ~= "string" or text == "" or not tw then return nil end
+    local vsl = tw.vertical_string_list
+    local lpp = tonumber(tw.lines_per_page)
+    if type(vsl) ~= "table" or #vsl == 0 or not lpp or lpp < 1 then return nil end
+    local first = math.max(1, tonumber(tw.virtual_line_num) or 1)
+    local last  = math.min(#vsl, first + lpp - 1)
+    local l1, l2 = vsl[first], vsl[last]
+    if not l1 or not l2 or not l1.offset or not l2.end_offset then return nil end
+    local bytes = char_bytes(text)
+    local b1 = bytes[l1.offset]
+    local b2 = bytes[l2.end_offset + 1]
+    if not b1 or not b2 then return nil end
+    b2 = b2 - 1
+    local cut = _wc_cache.cut
+    if cut and b2 >= cut then b2 = cut - 1 end
+    if b2 < b1 then return nil end
+    local slice = text:sub(b1, b2)
+    local _, n = slice:gsub("%S+", "")
+    -- Texte sans espaces (chinois, japonais…) : environ 1,6 caractère par « mot ».
+    if n < #slice / 40 then n = math.floor(#slice / 3 / 1.6) end
+    return n
+end
 local _gestures_wired = false
 local _restoring_position = false
 
@@ -129,6 +175,14 @@ local NOVEL_TITLE_ROW_H = 0 -- supprimé : aucun titre de roman gris au-dessus d
 local function nav_buttons_on()
     return Settings:get("reader_nav_buttons") ~= false
 end
+-- Titre du chapitre masqué (choix posé à la 1re ouverture, modifiable dans les
+-- Réglages de lecture ⚙ et dans Paramètres) : la barre du haut ne garde que la
+-- flèche retour et l'engrenage, sur une ligne plus basse → le texte gagne la
+-- différence de hauteur (cf. title_row_metrics / _title_extra_h négatif).
+local HIDDEN_BAR_H = Screen:scaleBySize(36)
+local function title_hidden()
+    return Settings:get("reader_hide_title") == true
+end
 -- Hauteur de la zone de texte : sans les gros boutons du bas, le texte récupère leur place.
 local function base_text_area_h()
     return P.SUB_H - (nav_buttons_on() and NAV_BTN_H or 0) - PAGE_IND_H
@@ -148,9 +202,12 @@ local function clean_reader_title(title)
     return title:match("^%s*(.-)%s*$") or ""
 end
 
-local function title_row_metrics(title)
+local function title_row_metrics(title, keep_title)
     local BTN_W = Screen:scaleBySize(48)
     local title_w = math.max(Screen:scaleBySize(160), P.W - 2 * BTN_W - GEAR_BTN_SIZE - Screen:scaleBySize(8))
+    if title_hidden() and not keep_title then
+        return HIDDEN_BAR_H, title_w
+    end
     local face = Font:getFace("cfont", 18)
     local probe = TextBoxWidget:new{
         text = clean_reader_title(title),
@@ -757,6 +814,8 @@ end
 local GEAR_TOP_OFFSET = Screen:scaleBySize(8) -- À VÉRIFIER / À AJUSTER
 
 local function make_settings_gear_button(row_h)
+    -- Barre compacte (titre masqué) : le bouton ne doit pas dépasser la ligne.
+    local size = math.min(GEAR_BTN_SIZE, row_h or GEAR_BTN_SIZE)
     local face = Font:getFace("cfont", 24)
     local txt = TextWidget:new{
         text    = "⚙",
@@ -767,11 +826,11 @@ local function make_settings_gear_button(row_h)
     local frame = FrameContainer:new{
         bordersize = 0,
         padding    = 0,
-        width      = GEAR_BTN_SIZE,
-        height     = GEAR_BTN_SIZE,
+        width      = size,
+        height     = size,
         background = bg_color(),
         CenterContainer:new{
-            dimen = Geom:new{ w = GEAR_BTN_SIZE, h = GEAR_BTN_SIZE },
+            dimen = Geom:new{ w = size, h = size },
             txt,
         },
     }
@@ -780,8 +839,8 @@ local function make_settings_gear_button(row_h)
     -- connaît pas le type exact renvoyé par wrapTappable (déjà utilisé tel
     -- quel comme enfant direct de HorizontalGroup ailleurs dans ce fichier,
     -- donc on sait qu'il se comporte comme un widget peignable normal).
-    local gear_y = row_h and math.max(0, math.floor((row_h - GEAR_BTN_SIZE) / 2)) or GEAR_TOP_OFFSET
-    tappable.overlap_offset = { P.W - GEAR_BTN_SIZE, gear_y }
+    local gear_y = row_h and math.max(0, math.floor((row_h - size) / 2)) or GEAR_TOP_OFFSET
+    tappable.overlap_offset = { P.W - size, gear_y }
     return tappable
 end
 
@@ -794,8 +853,9 @@ end
 -- donc dans un rectangle BLANC fixe, même écran totalement inversé autour —
 -- l'impression que la fonctionnalité ne marche pas. On ne touche pas à
 -- localement la même mise en page avec bg_color()/fg_color().
-local function make_reader_title_bar(title, on_back)
-    local H, title_w = title_row_metrics(title)
+local function make_reader_title_bar(title, on_back, keep_title)
+    local H, title_w = title_row_metrics(title, keep_title)
+    local hide_title = title_hidden() and not keep_title
     local bface = Font:getFace("cfont", 22)
     local BTN_W = Screen:scaleBySize(48)
     local spacer_w = BTN_W
@@ -824,14 +884,20 @@ local function make_reader_title_bar(title, on_back)
     -- TextBoxWidget, contrairement à TextWidget, effectue réellement le
     -- retour à la ligne. Le titre reste donc entièrement dans la zone centrale
     -- et ne peut plus passer sous la flèche de retour ou l'engrenage.
-    local title_widget = TextBoxWidget:new{
-        text      = clean_reader_title(title),
-        face      = Font:getFace("cfont", 18),
-        bold      = true,
-        width     = title_w,
-        height    = H - Screen:scaleBySize(4),
-        alignment = "center",
-    }
+    local title_widget
+    if hide_title then
+        -- Titre masqué : zone centrale vide (la flèche et l'engrenage restent).
+        title_widget = TextWidget:new{ text = " ", face = Font:getFace("cfont", 1), fgcolor = bg_color() }
+    else
+        title_widget = TextBoxWidget:new{
+            text      = clean_reader_title(title),
+            face      = Font:getFace("cfont", 18),
+            bold      = true,
+            width     = title_w,
+            height    = H - Screen:scaleBySize(4),
+            alignment = "center",
+        }
+    end
     local title_frame = FrameContainer:new{
         bordersize = 0, padding = 0,
         width = title_w, height = H,
@@ -854,10 +920,12 @@ local function make_title_row(title)
     -- barre elle-même change (cf. make_reader_title_bar ci-dessus) pour que
     -- aux zones vides autour.
     local row_h = title_row_metrics(title)
-    _title_extra_h = math.max(0, row_h - P.TITLE_H)
+    _title_extra_h = row_h - P.TITLE_H
     local title_bar = make_reader_title_bar(title, function() ReaderView.close() end)
 
-    local function eat_tap(x, width)
+    local function eat_tap(x, width, blk_h, blk_y)
+        blk_h = blk_h or Screen:scaleBySize(48)
+        blk_y = blk_y or GEAR_TOP_OFFSET
         -- IMPORTANT : FrameContainer ne doit pas être vide. Sur certaines builds
         -- Kobo, wrapTappable() appelle getSize() sur son enfant et un frame vide
         -- provoque exactement le crash framecontainer.lua:55 observé à l'ouverture
@@ -871,21 +939,31 @@ local function make_title_row(title)
             bordersize = 0,
             padding = 0,
             width = width,
-            height = Screen:scaleBySize(48),
+            height = blk_h,
             background = bg_color(),
             CenterContainer:new{
-                dimen = Geom:new{ w = width, h = Screen:scaleBySize(48) },
+                dimen = Geom:new{ w = width, h = blk_h },
                 blocker,
             },
         }
         local tappable = P.wrapTappable(frame, function() return true end)
-        tappable.overlap_offset = { x, GEAR_TOP_OFFSET }
+        tappable.overlap_offset = { x, blk_y }
         return tappable
     end
 
     -- Le titre est centré : on laisse une bande suffisamment large pour son
     -- texte et bloque les deux côtés. Le côté droit s'arrête avant l'engrenage.
     local arrow_zone_w = Screen:scaleBySize(64)
+    if title_hidden() then
+        -- Titre masqué : toute la zone entre la flèche et l'engrenage est
+        -- bloquée (un tap dans le vide ne ferme pas le chapitre).
+        local gear_w = math.min(GEAR_BTN_SIZE, row_h)
+        return OverlapGroup:new{
+            title_bar,
+            eat_tap(arrow_zone_w, math.max(0, P.W - gear_w - arrow_zone_w), row_h, 0),
+            make_settings_gear_button(row_h),
+        }
+    end
     local title_start_x = math.floor((P.W - TITLE_ACTIVE_W) / 2)
     local left_block_x = arrow_zone_w
     local left_block_w = math.max(0, title_start_x - arrow_zone_w)
@@ -1662,7 +1740,7 @@ local function open_index(index, resume, force_flash)
         -- on utilise la même hauteur réduite (reader_text_area_h) partout.
         do
             local layout_title = chapter.name or chapter.title or (T("Chapitre ") .. index)
-            _title_extra_h = math.max(0, title_row_metrics(layout_title) - P.TITLE_H)
+            _title_extra_h = title_row_metrics(layout_title) - P.TITLE_H
         end
 
         local ScrollTextWidget = require("ui/widget/scrolltextwidget")
@@ -1765,12 +1843,12 @@ local function open_index(index, resume, force_flash)
 
         local title = chapter.name or chapter.title or (T("Chapitre ") .. index)
         local row_h = title_row_metrics(title)
-        _title_extra_h = math.max(0, row_h - P.TITLE_H)
+        _title_extra_h = row_h - P.TITLE_H
         local cur_page, total_pages = compute_page_progress()
         -- Démarre le décompte dès l'affichage du chapitre : sans cela, le
         -- temps passé sur la première page de chaque chapitre serait perdu
         -- (save_current_progress n'est appelée qu'au premier tourne-page).
-        Stats.track(_ctx, cur_page)
+        Stats.track(_ctx, cur_page, visible_words())
         pcall(function() require("core.quests").track(_ctx, cur_page, cur_page >= total_pages, total_pages) end)
         local ext = _ctx.ext
         local on_tap_comments = (not comments_hidden())
@@ -2036,7 +2114,7 @@ local function save_current_progress()
     Cache.setProgress(_ctx.source_id, _ctx.novel.path, key, percent, current_page, total_pages, completed, charpos, top_line_num)
     -- Comptabilise la page qui vient d'être quittée dans les statistiques
     -- générales de la liseuse (core/stats.lua).
-    Stats.track(_ctx, current_page)
+    Stats.track(_ctx, current_page, visible_words())
     pcall(function() require("core.quests").track(_ctx, current_page, completed, total_pages) end)
     notify_detail_progress()
 end
@@ -2052,7 +2130,7 @@ refresh_page_indicator = function()
     if not chapter then return end
     local title = chapter.name or chapter.title or (T("Chapitre ") .. _ctx.index)
     local row_h = title_row_metrics(title)
-    _title_extra_h = math.max(0, row_h - P.TITLE_H)
+    _title_extra_h = row_h - P.TITLE_H
     local cur_page, total_pages = compute_page_progress()
     local text_row = HorizontalGroup:new{
         HorizontalSpan:new{ width = text_margin() },
@@ -2325,11 +2403,20 @@ local function build_settings_body()
             ReaderView.openSettings(true)
         end,
     }
+    local title_toggle_row = make_settings_card{
+        header = true,
+        label  = T("Titre du chapitre : ") .. (title_hidden() and T("MASQUÉ") or T("AFFICHÉ")),
+        on_tap = function()
+            Settings:set("reader_hide_title", not title_hidden())
+            Settings:set("reader_hide_title_asked", true)
+            ReaderView.openSettings(true)
+        end,
+    }
     local function gap() return P.spacer(Screen:scaleBySize(8)) end
 
     return VerticalGroup:new{
         align = "left",
-        make_reader_title_bar(T("Réglages de lecture"), function() ReaderView.closeSettings() end),
+        make_reader_title_bar(T("Réglages de lecture"), function() ReaderView.closeSettings() end, true),
         P.hairline(),
         gap(),
         face_row,
@@ -2341,6 +2428,8 @@ local function build_settings_body()
         width_row,
         gap(),
         dict_btn,
+        gap(),
+        title_toggle_row,
         gap(),
         night_row,
     }
@@ -2485,6 +2574,27 @@ end
 
 -- ── Public ────────────────────────────────────────────────────────────────────
 
+-- Question posée une seule fois : masquer le titre du chapitre dans le lecteur ?
+-- (la flèche retour et l'engrenage restent, le texte récupère la place).
+local function ask_hide_title_once()
+    if Settings:get("reader_hide_title_asked") then return end
+    local ConfirmBox = require("ui/widget/confirmbox")
+    UIManager:show(ConfirmBox:new{
+        text = T("Masquer le titre du chapitre pendant la lecture ?\n\nLes boutons flèche et réglages restent en haut, et le texte gagne de la place.\n\nTu pourras changer ça plus tard dans les Réglages de lecture (⚙) ou dans Paramètres."),
+        ok_text = T("Masquer"),
+        cancel_text = T("Garder"),
+        ok_callback = function()
+            Settings:set("reader_hide_title", true)
+            Settings:set("reader_hide_title_asked", true)
+            pcall(reapply_reader_settings)
+        end,
+        cancel_callback = function()
+            Settings:set("reader_hide_title", false)
+            Settings:set("reader_hide_title_asked", true)
+        end,
+    })
+end
+
 -- ctx = { source_id, ext, novel, chapters (liste ordonnée) }
 -- start_index : chapitre à ouvrir en premier (1-based)
 function ReaderView.open(ctx, start_index)
@@ -2517,14 +2627,18 @@ function ReaderView.open(ctx, start_index)
                 ok_callback = function()
                     Settings:set("reader_nav_buttons", true)
                     Settings:set("reader_nav_asked", true)
+                    UIManager:nextTick(ask_hide_title_once)
                 end,
                 cancel_callback = function()
                     Settings:set("reader_nav_buttons", false)
                     Settings:set("reader_nav_asked", true)
                     pcall(reapply_reader_settings)
+                    UIManager:nextTick(ask_hide_title_once)
                 end,
             })
         end)
+    else
+        UIManager:nextTick(ask_hide_title_once)
     end
 end
 

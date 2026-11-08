@@ -196,6 +196,34 @@ local function categories(refresh)
         },
         {
             {
+                text     = T("Titre du chapitre : ") .. (Settings:get("reader_hide_title") == true and T("MASQUÉ") or T("AFFICHÉ")),
+                callback = function()
+                    Settings:set("reader_hide_title", Settings:get("reader_hide_title") ~= true)
+                    Settings:set("reader_hide_title_asked", true)
+                    refresh()
+                end,
+            },
+        },
+        {
+            {
+                text     = T("La liste des chapitres suit la lecture : ") .. (Settings:get("chapters_follow_reading") ~= false and T("ACTIVÉ") or T("DÉSACTIVÉ")),
+                callback = function()
+                    Settings:set("chapters_follow_reading", Settings:get("chapters_follow_reading") == false)
+                    refresh()
+                end,
+            },
+        },
+        {
+            {
+                text     = T("Vitesse de lecture (mots/min) : ") .. (Settings:get("wpm_enabled") ~= false and T("ACTIVÉ") or T("DÉSACTIVÉ")),
+                callback = function()
+                    Settings:set("wpm_enabled", Settings:get("wpm_enabled") == false)
+                    refresh()
+                end,
+            },
+        },
+        {
+            {
                 text     = T("Popups des quêtes : ") .. on_off("quest_notifications"),
                 callback = function()
                     Settings:toggle("quest_notifications")
@@ -483,7 +511,6 @@ end
 local CATEGORIES = {
     { "settings",    "Paramètres",       "Général, téléchargements, couvertures, traduction, manga", "set_general" },
     -- COMMUNAUTÉ MASQUÉE (pas assez de monde) : pour la remettre, retirer le « -- » de la ligne ci-dessous.
-    -- { "community",   "Communauté",       "Fil de lecture, amis et messages", "set_general" },
     { "progression", "Quêtes & niveaux", "Progression, défis et succès de lecture", "set_stats" },
 }
 -- Sections regroupées dans « Paramètres » : { id dans categories(), titre de section }.
@@ -618,7 +645,6 @@ function SettingsDialog.build_rows()
     else
         rows = build_cards(P, function(id)
             -- « Quêtes & niveaux » ouvre directement le Centre de progression.
-            if id == "community" then require("ui.community").show(); return end
             if id == "progression" then require("core.quests").show(); return end
             _cat = id; _page = 1; rebuild()
         end)

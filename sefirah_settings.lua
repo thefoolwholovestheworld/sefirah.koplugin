@@ -31,6 +31,12 @@ local DEFAULTS = {
     hub_cache = {},
     hub_versions = {},
     chapters_ascending = false,
+    -- Liste des chapitres : s'ouvre sur la page qui contient le chapitre en cours de lecture.
+    chapters_follow_reading = true,
+    -- Vitesse de lecture (mots/min), calculée pendant la lecture dans le lecteur intégré.
+    wpm_enabled = true,
+    -- Stats (pages lues, chapitres, série, mots/min) : toujours visibles par les autres joueurs (non modifiable).
+    stats_public = true,
     -- Derniers filtres choisis dans Parcourir, par source : { [store] = { [clé] = id } }
     -- (store = source_id, ou source_id..":search" pour la recherche).
     browse_filters = {},
@@ -75,6 +81,10 @@ local DEFAULTS = {
     -- reader_nav_asked : la question posée à la 1re ouverture du lecteur a déjà reçu une réponse.
     reader_nav_buttons = true,
     reader_nav_asked   = false,
+    -- Lecteur de roman : masquer le titre du chapitre (la flèche retour et l'engrenage restent).
+    -- reader_hide_title_asked : la question posée à l'ouverture a déjà reçu une réponse.
+    reader_hide_title       = false,
+    reader_hide_title_asked = false,
     -- Petits popups de quêtes / succès / niveau pendant la lecture : désactivés par défaut.
     quest_notifications = false,
     -- Alertes « nouveau chapitre » : "ask" (demander à chaque favori), "all", "none".

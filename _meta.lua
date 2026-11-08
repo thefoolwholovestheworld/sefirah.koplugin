@@ -5,6 +5,6 @@
 return {
     name        = "Sefirah",
     fullname    = "Sefirah",
-    version     = "1.5",
+    version     = "1.6",
     description = "Suivi de web novels et export EPUB — fork de Mythos (unitreign)",
 }

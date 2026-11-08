@@ -244,6 +244,27 @@ local function quest_hint(q)
         .. (q.done and ("\n" .. T("✓ Terminée")) or "")
 end
 
+-- ── Vitesse de lecture : détail + réglage « stats publiques » ──────────────
+local function show_wpm_popup(wv, redraw)
+    local function rate(v) return v and T("%d mots/min"):format(v) or "—" end
+    local body = T("VITESSE DE LECTURE") .. "\n\n"
+        .. T("Aujourd'hui : ") .. rate(wv.today) .. "\n"
+        .. T("7 derniers jours : ") .. rate(wv.week) .. "\n"
+        .. T("Depuis le début : ") .. rate(wv.total) .. "\n"
+        .. T("%s mots lus au total"):format(fmt(wv.words or 0))
+        .. "\n\n" .. T("Mesurée dans le lecteur intégré (novels uniquement) : mots réellement affichés sur chaque page lue, divisés par le temps passé dessus.")
+    local ButtonDialogTitle = require("ui/widget/buttondialogtitle")
+    local dlg
+    dlg = ButtonDialogTitle:new{
+        title = body,
+        title_align = "center",
+        buttons = {
+            {{ text = T("Fermer"), callback = function() UIManager:close(dlg) end }},
+        },
+    }
+    UIManager:show(dlg)
+end
+
 -- ── Écran Progression ───────────────────────────────────────────────────────
 local function build_progress(avail, go, redraw)
     K = math.min(1, units(avail) / 520)
@@ -279,9 +300,19 @@ local function build_progress(avail, go, redraw)
     -- Statistiques de lecture
     do
         local hh = sz(36)
+        -- Vitesse de lecture (mots/min) : moyenne des 7 derniers jours, sinon moyenne globale.
+        local wpm_label = T("Aujourd'hui")
+        local wpm_data
+        if Settings:get("wpm_enabled") ~= false then
+            local okw, wv = pcall(function() return require("core.stats").wpm() end)
+            wpm_data = okw and type(wv) == "table" and wv or {}
+            local rate = wpm_data.week or wpm_data.total
+            wpm_label = (rate and T("%d mots/min"):format(rate) or T("— mots/min")) .. "  ›"
+        end
         local head = HorizontalGroup:new{
             slot(math.floor(iw * 0.6), hh, HorizontalGroup:new{ hgap(sc(14)), text(T("STATISTIQUES DE LECTURE"), 16, { bold = true }) }, "left"),
-            slot(iw - math.floor(iw * 0.6), hh, HorizontalGroup:new{ text(T("Aujourd'hui"), 13, { color = DARK }), hgap(sc(14)) }, "right"),
+            P.wrapTappable(slot(iw - math.floor(iw * 0.6), hh, HorizontalGroup:new{ text(wpm_label, 13, { color = DARK, bold = wpm_data ~= nil }), hgap(sc(14)) }, "right"),
+                function() if wpm_data then show_wpm_popup(wpm_data, redraw) end end),
         }
         local stats = {
             { "book",     p.daily_pages,  T("pages"),     T("aujourd'hui") },
@@ -526,6 +557,38 @@ local function is_creator_pl(pl, mine)
     end
     return false
 end
+-- Texte des stats d'un joueur (stats = { pages, chapters, streak, wpm }) ; nil si le joueur n'a pas encore synchronisé ses stats.
+local function stats_text(st)
+    if type(st) ~= "table" then return nil end
+    local lines = {
+        T("%s pages lues"):format(fmt(tonumber(st.pages) or 0)),
+        T("%s chapitres"):format(fmt(tonumber(st.chapters) or 0)),
+        T("Série : %d jours"):format(tonumber(st.streak) or 0),
+    }
+    local wpm = tonumber(st.wpm)
+    if wpm and wpm > 0 then lines[#lines + 1] = T("%d mots/min (novels)"):format(wpm) end
+    return table.concat(lines, "\n")
+end
+-- Mes propres stats (toujours visibles pour moi).
+local function my_stats()
+    local p = Quests.getProgress()
+    local st = { pages = p.pages, chapters = p.chapters, streak = p.streak }
+    if Settings:get("wpm_enabled") ~= false then
+        local ok, wv = pcall(function() return require("core.stats").wpm() end)
+        if ok and type(wv) == "table" then st.wpm = wv.week or wv.total end
+    end
+    return st
+end
+-- Légende d'un joueur : pseudo, niveau, XP, puis ses stats (ou « stats privées »).
+local function player_caption(pl, mine)
+    local name, lvl, xp = player_fields(pl)
+    local cap = name .. "\n"
+    if is_creator_pl(pl, mine) then cap = cap .. T("— CRÉATEUR —") .. "\n" end
+    cap = cap .. T("Niv. %d"):format(lvl) .. "  ·  " .. fmt(xp) .. " XP"
+    local st = mine and my_stats() or pl.stats
+    cap = cap .. "\n\n" .. (stats_text(st) or T("Stats privées"))
+    return cap
+end
 local function name_widget(name, mark, pt, max_w, bold)
     if not mark then return text(name, pt, { bold = bold, max_w = max_w }) end
     local isz = sz(pt + 4)
@@ -545,10 +608,7 @@ local function podium_avatar(pl, mine, size)
     -- Toucher la pdp l'affiche en grand, avec le pseudo, le niveau et l'XP.
     local name, lvl, xp = player_fields(pl)
     return P.wrapTappable(wdg, function()
-        local stats = T("Niv. %d"):format(lvl) .. "  ·  " .. fmt(xp) .. " XP"
-        local cap = name .. "\n" .. stats
-        if is_creator_pl(pl, mine) then cap = name .. "\n" .. T("— CRÉATEUR —") .. "\n" .. stats end
-        Pdp.showLarge(cap, pl.avatar, mine, ICON_DIR .. "avatar.png")
+        Pdp.showLarge(player_caption(pl, mine), pl.avatar, mine, ICON_DIR .. "avatar.png")
     end)
 end
 
@@ -595,7 +655,7 @@ local function build_friends(avail, redraw)
     local list = {}
     for _, f in ipairs(fr.friends or {}) do
         local name, lvl, xp = player_fields(f)
-        list[#list + 1] = { name = name, lvl = lvl, xp = xp }
+        list[#list + 1] = { name = name, lvl = lvl, xp = xp, stats = f.stats }
     end
     list[#list + 1] = { name = T("%s (vous)"):format(my_name ~= "" and my_name or T("Vous")), lvl = me.level, xp = me.xp, me = true }
     table.sort(list, function(a, b) if a.xp ~= b.xp then return a.xp > b.xp end return a.name < b.name end)
@@ -644,7 +704,7 @@ local function build_friends(avail, redraw)
     for _, e in ipairs(shown) do
         local r = trow(tostring(e.rank), e.name, tostring(e.lvl), fmt(e.xp), { bold = e.me, bg = e.me and PALE or WHITE })
         if e.me then rows[#rows + 1] = r
-        else rows[#rows + 1] = P.wrapTappable(r, function() Friends.manage(e.name, e.lvl, function() again() end) end) end
+        else rows[#rows + 1] = P.wrapTappable(r, function() Friends.manage(e.name, e.lvl, function() again() end, stats_text(e.stats) or T("Stats privées")) end) end
         rows[#rows + 1] = inset(hline(w))
     end
     rows[#rows + 1] = rgap(sz(12))
@@ -771,7 +831,11 @@ local function build_rank(avail, redraw)
         for i = first_row, last_row do
             local name, lvl, xp = player_fields(players[i])
             local mine_row = is_me(players[i])
-            rows[#rows + 1] = trow(tostring(i), name, tostring(lvl), fmt(xp), { bold = mine_row, bg = mine_row and PALE or WHITE, creator = is_creator_pl(players[i], mine_row) })
+            local prow = trow(tostring(i), name, tostring(lvl), fmt(xp), { bold = mine_row, bg = mine_row and PALE or WHITE, creator = is_creator_pl(players[i], mine_row) })
+            local pl_i = players[i]
+            rows[#rows + 1] = P.wrapTappable(prow, function()
+                UIManager:show(InfoMessage:new{ text = player_caption(pl_i, mine_row), timeout = 8 })
+            end)
             rows[#rows + 1] = inset(hline(w))
         end
         if paged then

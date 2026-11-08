@@ -1,3 +1,39 @@
+# Sefirah v1.6
+
+## Français
+
+### Nouveautés
+- **10 nouvelles sources au catalogue** : NovelFull, NovelNinja, BeastNovels, Blume-Verse (anglais) ; Azora Manga, Cenele, RewayahFans, SeaNovel (arabe) ; IxDzs8 (chinois) ; Linovelib (chinois traditionnel).
+- **Vitesse de lecture (mots/min)** : mesurée pendant la lecture dans le lecteur intégré, à partir des pages vraiment lues (ni liseuse en veille, ni page survolée). Détail dans le centre de progression, désactivable dans Paramètres.
+- **Classement** : tes stats (pages lues, chapitres, série, mots/min) sont visibles dans le classement et dans le menu d'un ami.
+- **Lecteur de roman** : option pour masquer le titre du chapitre (la flèche retour et l'engrenage restent, le texte gagne la place). Question posée à la première ouverture, modifiable dans Paramètres et dans les réglages de lecture.
+- **Liste des chapitres** : s'ouvre sur la page du chapitre en cours de lecture (option dans Paramètres).
+- **Sources** : nouveau bouton « Supprimer la source » qui efface le fichier ; une source du Hub se re-télécharge ensuite à tout moment.
+
+### Changements
+- **Plus aucune source dans le plugin** : toutes se téléchargent depuis Sefirah Source Hub (onglet Sources › « Actualiser le catalogue », Wi-Fi requis). Le plugin est beaucoup plus léger. Les sources déjà présentes sur ta liseuse continuent de fonctionner. Les icônes du catalogue s'affichent dès l'onglet Sources, et les sources que tu avais installées sont rétablies automatiquement à l'actualisation du catalogue (si un update du plugin les a effacées).
+- Traductions : 17 langues complètes, 36 textes inutilisés supprimés.
+- Release allégée : captures, dossier `.github`, README de la communauté, `ui/community.lua`, `community_model.lua`, 13 images inutilisées et fichier `.bak` retirés ; icônes des sources déplacées sur le Hub.
+- Code mort retiré (MangaBall, quêtes).
+
+## English
+
+### New
+- **10 new sources in the catalogue**: NovelFull, NovelNinja, BeastNovels, Blume-Verse (English); Azora Manga, Cenele, RewayahFans, SeaNovel (Arabic); IxDzs8 (Chinese); Linovelib (Traditional Chinese).
+- **Reading speed (words/min)**: measured while reading in the built-in reader, from pages actually read (not a sleeping device, not a skimmed page). Details in the progress centre, can be turned off in Settings.
+- **Leaderboard**: your stats (pages read, chapters, streak, words/min) are shown in the ranking and in a friend's menu.
+- **Novel reader**: option to hide the chapter title (the back arrow and the gear stay, the text gets the room). Asked on first opening, changeable in Settings and in the reading settings.
+- **Chapter list**: opens on the page of the chapter you are reading (option in Settings).
+- **Sources**: new "Delete the source" button that removes the file; a Hub source can be downloaded again at any time.
+
+### Changes
+- **No more sources bundled in the plugin**: all of them are downloaded from Sefirah Source Hub (Sources tab › “Refresh the catalogue”, Wi-Fi required). The plugin is much lighter. Sources already on your e-reader keep working. Catalogue icons show up right in the Sources tab, and sources you had installed are restored automatically when the catalogue refreshes (if a plugin update wiped them).
+- Translations: 17 languages complete, 36 unused texts removed.
+- Lighter release: screenshots, `.github` folder, community README, `ui/community.lua`, `community_model.lua`, 13 unused images and a `.bak` file removed.
+- Dead code removed (MangaBall, quests).
+
+---
+
 # Sefirah v1.5
 
 ## Français
