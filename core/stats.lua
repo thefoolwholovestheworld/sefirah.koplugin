@@ -56,6 +56,8 @@ local Stats = {}
 local session  = nil   -- { key, id_book, page, total_pages, start_ts }
 local buffer   = {}    -- lignes page_stat_data en attente d'écriture
 local book_ids = {}    -- cache clé_roman -> id_book
+local ident_cache = {} -- clé_roman#chapitre -> fiche EPUB (ou false)
+local remembered  = {} -- md5:total virtuel déjà inscrits dans sefirah_stats_books.lua
 local conn     = nil
 local wpm_pending = {}  -- date -> { w = mots, s = secondes } en attente d'écriture
 local disabled = false
@@ -141,19 +143,41 @@ local function get_id_book(c, title, authors, md5, pages, language)
     return tonumber(c:rowexec("SELECT last_insert_rowid();")), pages
 end
 
+-- Fiche « livre » de l'EPUB exporté : la même que celle de KOReader quand l'EPUB
+-- est ouvert dans le lecteur (titre, auteurs, md5), pour que le temps lu dans
+-- Sefirah et celui lu dans KOReader s'additionnent sur un seul livre.
+-- Une fiche existante n'est jamais modifiée (ni titre, ni nombre de pages).
+local function get_id_book_attached(c, ident, fallback_title, pages, language)
+    local stmt = c:prepare("SELECT id FROM book WHERE md5 = ? ORDER BY last_open DESC LIMIT 1;")
+    local row  = stmt:reset():bind(ident.md5):step()
+    stmt:close()
+    if row and row[1] then return tonumber(row[1]) end
+    local ins = c:prepare("INSERT INTO book VALUES(NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);")
+    ins:reset():bind(ident.title or fallback_title, ident.authors or "N/A", 0, os.time(), 0, pages,
+                     "N/A", ident.language or language or "N/A", ident.md5, 0, 0):step()
+    ins:close()
+    return tonumber(c:rowexec("SELECT last_insert_rowid();"))
+end
+
 -- ── Romans suivis par Sefirah ────────────────────────────────────────────────
 -- La base de KOReader mélange tous les livres lus. Pour n'afficher que ceux de
 -- Sefirah, on garde à part (md5 → titre, source) chaque roman suivi.
 local BOOKS_PATH = DataStorage:getSettingsDir() .. "/sefirah_stats_books.lua"
 
-local function remember_book(md5, name, source_id)
+local function remember_book(md5, name, source_id, vt)
     pcall(function()
         local LuaSettings = require("luasettings")
         local f   = LuaSettings:open(BOOKS_PATH)
         local all = f:readSetting("books") or {}
         local cur = all[md5]
-        if cur and cur.name == name and cur.source == tostring(source_id) then return end
-        all[md5] = { name = name, source = tostring(source_id) }
+        local vkey = vt and string.format("%d", vt) or nil
+        if cur and cur.name == name and cur.source == tostring(source_id)
+           and (not vkey or (cur.vts and cur.vts[vkey])) then return end
+        -- vt : total de pages virtuelles d'une ligne écrite par Sefirah sur la fiche d'un
+        -- EPUB (fiche partagée avec KOReader, dont les pages sont de vraies pages).
+        local vts = cur and cur.vts or nil
+        if vkey then vts = vts or {}; vts[vkey] = true end
+        all[md5] = { name = name, source = tostring(source_id), attached = vkey ~= nil or (cur and cur.attached) or nil, vts = vts }
         f:saveSetting("books", all)
         f:flush()
     end)
@@ -164,7 +188,7 @@ local function known_books()
     pcall(function()
         local LuaSettings = require("luasettings")
         for md5, b in pairs(LuaSettings:open(BOOKS_PATH):readSetting("books") or {}) do
-            known[md5] = { name = b.name, source = b.source, path = b.path }
+            known[md5] = { name = b.name, source = b.source, path = b.path, attached = b.attached, vts = b.vts }
         end
     end)
     -- Romans déjà lus avant l'existence du fichier annexe : on retrouve leur md5
@@ -298,6 +322,29 @@ function Stats.track(ctx, page_in_chapter, words_per_page)
         local wanted    = nb_chap * PAGES_PER_CHAPTER
 
         local index = math.max(1, tonumber(ctx.index) or 1)
+
+        -- Si ce chapitre est dans un EPUB exporté par Sefirah, le temps est compté sur la
+        -- fiche de cet EPUB ; les pages virtuelles suivent alors le rang dans l'EPUB.
+        local ident = nil
+        do
+            local ch  = ctx.chapters[index]
+            local cp  = ch and (ch.path or ch.sourceUrl or "") or ""
+            local ik  = novel_key .. "#" .. cp
+            ident = ident_cache[ik]
+            if ident == nil then
+                local okI, I = pcall(function()
+                    return require("core.epubsync").stats_identity(ctx.source_id, novel.path or "", cp)
+                end)
+                ident = (okI and I) or false
+                ident_cache[ik] = ident
+            end
+        end
+        if ident then
+            index   = ident.idx
+            nb_chap = ident.n
+            wanted  = nb_chap * PAGES_PER_CHAPTER
+        end
+
         local p     = math.max(1, math.min(PAGES_PER_CHAPTER, tonumber(page_in_chapter) or 1))
         local page  = (index - 1) * PAGES_PER_CHAPTER + p
 
@@ -311,23 +358,43 @@ function Stats.track(ctx, page_in_chapter, words_per_page)
 
         buffer_session(now)
 
-        local cached = book_ids[novel_key]
+        local row_key = ident and ("epub:" .. ident.md5) or novel_key
+        local cached = book_ids[row_key]
         if not cached then
             local c = get_conn()
             if not c then return end
-            local ok2, id, pages = pcall(get_id_book, c,
-                novel.name or "Web novel",
-                novel.author or "N/A",
-                hash("sefirah:" .. novel_key),
-                wanted,
-                novel.lang)
-            if not ok2 or not id then
-                logger.warn("Sefirah stats : id_book introuvable", tostring(id))
-                return
+            if ident then
+                local ok2, id = pcall(get_id_book_attached, c, ident, novel.name or "Web novel", wanted, novel.lang)
+                if not ok2 or not id then
+                    logger.warn("Sefirah stats : fiche EPUB introuvable", tostring(id))
+                    return
+                end
+                cached = { id = id, pages = wanted, attached = true }
+            else
+                local ok2, id, pages = pcall(get_id_book, c,
+                    novel.name or "Web novel",
+                    novel.author or "N/A",
+                    hash("sefirah:" .. novel_key),
+                    wanted,
+                    novel.lang)
+                if not ok2 or not id then
+                    logger.warn("Sefirah stats : id_book introuvable", tostring(id))
+                    return
+                end
+                cached = { id = id, pages = pages or wanted }
+                remember_book(hash("sefirah:" .. novel_key), novel.name or "Web novel", ctx.source_id)
             end
-            cached = { id = id, pages = pages or wanted }
-            book_ids[novel_key] = cached
-            remember_book(hash("sefirah:" .. novel_key), novel.name or "Web novel", ctx.source_id)
+            book_ids[row_key] = cached
+        end
+        if ident then
+            -- total_pages = pages virtuelles de CET EPUB (la vue page_stat les ramène aux
+            -- vraies pages du livre) ; le nombre de pages du livre n'est jamais touché.
+            cached.pages = wanted
+            local rk = ident.md5 .. ":" .. wanted
+            if not remembered[rk] then
+                remembered[rk] = true
+                remember_book(ident.md5, novel.name or "Web novel", ctx.source_id, wanted)
+            end
         end
 
         session = {
@@ -397,6 +464,7 @@ function Stats.summary()
 
     local known = known_books()
     local by_id, ids = {}, {}
+    local att_ids, vt_set = {}, {}   -- fiches EPUB partagées avec KOReader
     local ok, err = pcall(function()
         local st  = c:prepare("SELECT id, md5, title FROM book;")
         local row = st:step()
@@ -406,6 +474,13 @@ function Stats.summary()
                 local id = tonumber(row[1])
                 by_id[id] = { name = k.name or tostring(row[3]), source = k.source, path = k.path }
                 ids[#ids + 1] = string.format("%d", id)
+                if k.attached then
+                    att_ids[#att_ids + 1] = string.format("%d", id)
+                    for vk in pairs(k.vts or {}) do
+                        local vn = tonumber(vk)
+                        if vn then vt_set[string.format("%d", vn)] = true end
+                    end
+                end
             end
             row = st:step()
         end
@@ -418,6 +493,16 @@ function Stats.summary()
     if #ids == 0 then return out end
     local idlist = table.concat(ids, ",")
 
+    -- Sur la fiche d'un EPUB, les pages lues dans KOReader sont de vraies pages : seules les
+    -- lignes dont total_pages est un total virtuel de Sefirah comptent pour « chapitres ».
+    local chap_expr = string.format("(CAST(page AS INTEGER) - 1) / %d", PAGES_PER_CHAPTER)
+    if #att_ids > 0 and next(vt_set) then
+        local vts = {}
+        for vk in pairs(vt_set) do vts[#vts + 1] = vk end
+        chap_expr = string.format("CASE WHEN id_book IN (%s) AND total_pages NOT IN (%s) THEN NULL ELSE %s END",
+            table.concat(att_ids, ","), table.concat(vts, ","), chap_expr)
+    end
+
     -- Index « il y a N jours » → pour classer chaque jour dans aujourd'hui / 7 j / 30 j.
     local age = {}
     for k = 0, 29 do age[day_str(k)] = k end
@@ -428,10 +513,10 @@ function Stats.summary()
             SELECT id_book,
                    strftime('%%Y-%%m-%%d', start_time, 'unixepoch', 'localtime'),
                    sum(duration),
-                   count(DISTINCT (CAST(page AS INTEGER) - 1) / %d)
+                   count(DISTINCT %s)
             FROM page_stat_data WHERE id_book IN (%s)
             GROUP BY id_book, 2;
-        ]], PAGES_PER_CHAPTER, idlist))
+        ]], chap_expr, idlist))
         local row = st:step()
         while row do
             local date = tostring(row[2])
@@ -450,27 +535,39 @@ function Stats.summary()
 
         local st2 = c:prepare(string.format([[
             SELECT id_book, sum(duration),
-                   count(DISTINCT (CAST(page AS INTEGER) - 1) / %d), max(start_time)
+                   count(DISTINCT %s), max(start_time)
             FROM page_stat_data WHERE id_book IN (%s) GROUP BY id_book;
-        ]], PAGES_PER_CHAPTER, idlist))
+        ]], chap_expr, idlist))
         local src = {}
+        local merged, order = {}, {}   -- un roman peut avoir 2 fiches (ancienne + EPUB) : on les fusionne
         local r2 = st2:step()
         while r2 do
             local b = by_id[tonumber(r2[1])]
             if b then
                 local secs, chap = tonumber(r2[2]) or 0, tonumber(r2[3]) or 0
-                out.books[#out.books + 1] = {
-                    name = b.name, source = b.source, path = b.path, secs = secs, chapters = chap, last = tonumber(r2[4]) or 0,
-                }
-                out.total.secs = out.total.secs + secs
-                out.total.chapters = out.total.chapters + chap
-                local s = src[b.source or "?"] or { id = b.source, secs = 0, books = 0 }
-                s.secs = s.secs + secs; s.books = s.books + 1
-                src[b.source or "?"] = s
+                local mk = tostring(b.source) .. "\1" .. tostring(b.name)
+                local m = merged[mk]
+                if not m then
+                    m = { name = b.name, source = b.source, path = b.path, secs = 0, chapters = 0, last = 0 }
+                    merged[mk] = m
+                    order[#order + 1] = m
+                end
+                m.path = m.path or b.path
+                m.secs = m.secs + secs
+                m.chapters = m.chapters + chap
+                m.last = math.max(m.last, tonumber(r2[4]) or 0)
             end
             r2 = st2:step()
         end
         st2:close()
+        for _, m in ipairs(order) do
+            out.books[#out.books + 1] = m
+            out.total.secs = out.total.secs + m.secs
+            out.total.chapters = out.total.chapters + m.chapters
+            local s = src[m.source or "?"] or { id = m.source, secs = 0, books = 0 }
+            s.secs = s.secs + m.secs; s.books = s.books + 1
+            src[m.source or "?"] = s
+        end
         for _, s in pairs(src) do out.sources[#out.sources + 1] = s end
     end)
     if not ok2 then

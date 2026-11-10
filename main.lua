@@ -3,7 +3,7 @@
 -- Sefirah is a FORK of Mythos by unitreign (GPL-3.0), modified by thefoolwholovestheworld.
 
 -- Sefirah — point d'entrée principal du plugin.
-_G.SEFIRAH_VERSION = "1.6"
+_G.SEFIRAH_VERSION = "1.6.1"
 
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local UIManager       = require("ui/uimanager")
@@ -67,8 +67,19 @@ end
 
 local _ready = false
 
+local function dlog(...)
+    local n, args = select("#", ...), { ... }
+    pcall(function()
+        local parts = {}
+        for i = 1, n do parts[#parts + 1] = tostring(args[i]) end
+        require("logger").info("Sefirah/diag: " .. table.concat(parts, " "))
+    end)
+end
+
 local function open_sefirah()
+    dlog("open_sefirah appele, v" .. _G.SEFIRAH_VERSION, "_ready=", _ready)
     local missing = missing_files()
+    dlog("fichiers manquants:", #missing)
     if #missing > 0 then
         forget_failed_modules()
         local shown = {}
@@ -117,7 +128,14 @@ local function open_sefirah()
         end
 
         pcall(function() require("core.night").apply() end)
+        dlog("pile avant ouverture:", SefirahUI.stackDesc and SefirahUI.stackDesc())
+        local raised = SefirahUI.raiseToFront and SefirahUI.raiseToFront()
+        if raised then dlog("ecrans Sefirah recouverts par d'autres widgets -> remontes au sommet") end
         SefirahUI.show("library")
+        dlog("show termine, panneau a l'ecran:", SefirahUI.isPanelShown and SefirahUI.isPanelShown())
+        UIManager:scheduleIn(1, function()
+            dlog("1 s apres l'ouverture, panneau a l'ecran:", SefirahUI.isPanelShown and SefirahUI.isPanelShown())
+        end)
 
         -- Romans déjà en favoris : propose les alertes « nouveau chapitre ».
         pcall(function() require("core.newch").askForExisting() end)
@@ -181,6 +199,7 @@ local function migrate_legacy_settings()
 end
 
 function Sefirah:init()
+    dlog("Sefirah:init (nouvelle instance du plugin)")
     pcall(migrate_legacy_settings)
     -- Manga : dans le gestionnaire de fichiers, rouvre la fiche après la
     -- fermeture d'un CBZ ; dans le lecteur, oublie l'attente si autre document.
@@ -224,7 +243,28 @@ local function flush_all()
     pcall(function() require("core.cache").flush() end)
 end
 function Sefirah:onFlushSettings() flush_all() end
-function Sefirah:onSuspend() flush_all() end
+function Sefirah:onSuspend()
+    dlog("evenement Suspend")
+    -- Synchronisation avec l'EPUB exporté : position du plugin -> EPUB (si on lisait dans
+    -- Sefirah) ou position de l'EPUB -> plugin (si on lisait l'EPUB dans KOReader).
+    pcall(function()
+        local ES = require("core.epubsync")
+        ES.flush()
+        if self.ui and self.ui.document then ES.pull(self.ui) end
+    end)
+    flush_all()
+end
+
+-- Un EPUB exporté par Sefirah se ferme dans KOReader : le chapitre atteint est reporté
+-- dans le plugin (progression par chapitre, reprise de lecture).
+function Sefirah:onCloseDocument()
+    pcall(function() require("core.epubsync").pull(self.ui) end)
+end
+function Sefirah:onResume()
+    local shown
+    pcall(function() shown = require("ui.main_widget").isPanelShown() end)
+    dlog("evenement Resume, panneau a l'ecran:", shown)
+end
 function Sefirah:onExit() flush_all() end
 function Sefirah:onClose() flush_all() end
 
@@ -244,6 +284,7 @@ end
 -- « nouveau chapitre » ont été acceptées. Pas de « return true » : l'évènement
 -- doit continuer vers les autres plugins.
 function Sefirah:onNetworkConnected()
+    dlog("evenement NetworkConnected")
     pcall(function() require("core.newch").onNetworkConnected() end)
     -- Reprise de la file de téléchargement après une coupure réseau.
     pcall(function() require("core.dlqueue").onNetworkConnected() end)

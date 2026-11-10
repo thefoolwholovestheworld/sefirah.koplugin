@@ -375,6 +375,7 @@ return {
     ["DROITE → GAUCHE"] = "من اليمين إلى اليسار",
     ["GAUCHE → DROITE"] = "من اليسار إلى اليمين",
     ["Manga · Supprimer après lecture : "] = "مانغا · الحذف بعد القراءة: ",
+    ["Manga · Ajout auto à la bibliothèque : "] = "مانغا · الإضافة التلقائية إلى المكتبة: ",
     ["Manga · Espace maximum : "] = "مانغا · أقصى مساحة تخزين: ",
     ["ILLIMITÉ"] = "غير محدودة",
     ["%d Mo"] = "%d م.ب",

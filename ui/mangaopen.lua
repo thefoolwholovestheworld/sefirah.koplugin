@@ -21,6 +21,36 @@ local DB         = require("core.db")
 
 local MangaOpen = {}
 
+-- Ajoute le manga à la Bibliothèque dès qu'on en ouvre un chapitre (lu ou téléchargé),
+-- sans attendre qu'on le mette en favori. Sinon l'onglet « Mangas » restait vide.
+local function ensure_in_library(ctx)
+    if Settings:get("manga_auto_library") == false then return end
+    local ok, err = pcall(function()
+        local n = ctx.novel or {}
+        local path = n.path or ""
+        local title = n.name or n.title
+        if path == "" or not ctx.source_id or not title or title == "" then return end
+        local ex = DB.find(ctx.source_id, path)
+        if ex then
+            -- Fiche créée par la récupération automatique (titre approximatif) : on la complète.
+            if ex.auto_added then
+                DB.update(ctx.source_id, path, {
+                    title = title, cover = n.cover or ex.cover, author = n.author or ex.author,
+                    status = n.status or ex.status, summary = n.summary or ex.summary,
+                    auto_added = false,
+                })
+            end
+            return
+        end
+        DB.track({
+            title = title, source_id = ctx.source_id, path = path,
+            cover = n.cover, author = n.author, status = n.status, summary = n.summary,
+            total_chapters = #(ctx.chapters or {}), last_read_at = os.time(),
+        })
+    end)
+    if not ok then logger.warn("Sefirah/Manga: ajout à la bibliothèque impossible", tostring(err)) end
+end
+
 local ERRORS = {
     missing_pages  = "Certaines pages n'ont pas pu être téléchargées (connexion ?). Les pages déjà reçues sont conservées : retouche le chapitre pour reprendre.",
     cancelled      = "Téléchargement annulé. Les pages déjà reçues sont conservées.",
@@ -280,6 +310,7 @@ function MangaOpen.open(ctx, start_index, host)
         return
     end
     if host and type(host) ~= "table" then host = nil end
+    ensure_in_library(ctx)
     local novel_title = ctx.novel.name or ctx.novel.title or ctx.novel.path or "manga"
     local token = host and host._nav_token
     -- Le lecteur a-t-il été annulé / fermé entre-temps ?

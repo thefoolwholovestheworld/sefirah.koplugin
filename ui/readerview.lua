@@ -923,7 +923,7 @@ local function make_title_row(title)
     _title_extra_h = row_h - P.TITLE_H
     local title_bar = make_reader_title_bar(title, function() ReaderView.close() end)
 
-    local function eat_tap(x, width, blk_h, blk_y)
+    local function eat_tap(x, width, blk_h, blk_y, transparent)
         blk_h = blk_h or Screen:scaleBySize(48)
         blk_y = blk_y or GEAR_TOP_OFFSET
         -- IMPORTANT : FrameContainer ne doit pas être vide. Sur certaines builds
@@ -940,7 +940,10 @@ local function make_title_row(title)
             padding = 0,
             width = width,
             height = blk_h,
-            background = bg_color(),
+            -- Bandes posées PAR-DESSUS le titre : sans fond, sinon elles effacent la partie du titre
+            -- qui dépasse la zone centrale (titre long coupé à gauche et à droite). Elles gardent
+            -- leur rôle : absorber les taps.
+            background = (not transparent) and bg_color() or nil,
             CenterContainer:new{
                 dimen = Geom:new{ w = width, h = blk_h },
                 blocker,
@@ -972,8 +975,8 @@ local function make_title_row(title)
 
     return OverlapGroup:new{
         title_bar,
-        eat_tap(left_block_x, left_block_w),
-        eat_tap(right_block_x, right_block_w),
+        eat_tap(left_block_x, left_block_w, nil, nil, true),
+        eat_tap(right_block_x, right_block_w, nil, nil, true),
         make_settings_gear_button(row_h),
     }
 end
@@ -2112,6 +2115,10 @@ local function save_current_progress()
         percent = 1
     end
     Cache.setProgress(_ctx.source_id, _ctx.novel.path, key, percent, current_page, total_pages, completed, charpos, top_line_num)
+    -- Reporte la position dans l'EPUB exporté (progression de la bibliothèque KOReader).
+    pcall(function()
+        require("core.epubsync").notify(_ctx.source_id, _ctx.novel.path or "", key, percent, completed)
+    end)
     -- Comptabilise la page qui vient d'être quittée dans les statistiques
     -- générales de la liseuse (core/stats.lua).
     Stats.track(_ctx, current_page, visible_words())
@@ -3450,6 +3457,7 @@ function ReaderView.close()
     end
     save_current_progress()
     Stats.stop()  -- clôt la session de lecture en cours
+    pcall(function() require("core.epubsync").flush() end)  -- écrit la dernière position dans l'EPUB
     if _panel then
         -- Refresh complet (pas "partial") à la fermeture : le panneau qui
         -- réapparaît en dessous (Detail, avec sa couverture) redessine une

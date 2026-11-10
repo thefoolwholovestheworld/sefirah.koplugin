@@ -523,8 +523,16 @@ function Export.run(ctx)
                 for _, ch in ipairs(chapters) do
                     ch_paths[#ch_paths + 1] = ch.path or ch.sourceUrl or ""
                 end
-                for _, epub_path in ipairs(results.exported) do
-                    DB.recordExport(ctx.source_id, novel.path or "", ch_paths, epub_path)
+                if results.groups and #results.groups > 0 then
+                    -- Liste réelle des chapitres de CHAQUE fichier (nécessaire à la
+                    -- synchronisation de la progression avec l'EPUB, core/epubsync.lua).
+                    for _, g in ipairs(results.groups) do
+                        DB.recordExport(ctx.source_id, novel.path or "", g.paths, g.epub)
+                    end
+                else
+                    for _, epub_path in ipairs(results.exported) do
+                        DB.recordExport(ctx.source_id, novel.path or "", ch_paths, epub_path)
+                    end
                 end
             end
 

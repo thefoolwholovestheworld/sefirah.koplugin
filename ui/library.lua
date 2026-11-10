@@ -485,10 +485,43 @@ end
 
 -- ── Public ──────────────────────────────────────────────────────────────────
 
+-- Titre lisible à partir de la fin d'un chemin (« /manga/one-piece/ » → « One Piece »).
+local function title_from_path(path)
+    local last
+    for seg in tostring(path or ""):gmatch("[^/]+") do last = seg end
+    last = (last or ""):gsub("%.%w+$", ""):gsub("[%-_]+", " ")
+    return (last:gsub("(%a)([%w']*)", function(a, b) return a:upper() .. b end))
+end
+
+-- Une seule fois : les mangas déjà commencés avant ce correctif (progression enregistrée
+-- mais jamais mis en favori) sont ajoutés à la Bibliothèque. Le titre est complété
+-- à la prochaine ouverture de la fiche.
+local function recover_started_manga()
+    if Settings:get("manga_library_recovered") or Settings:get("manga_auto_library") == false then return end
+    pcall(function()
+        for _, e in ipairs(Cache.listEntries()) do
+            local has_progress = e.progress ~= nil or (e.progress_by_chapter and next(e.progress_by_chapter) ~= nil)
+            if has_progress and e.source_id and e.novel_path and e.novel_path ~= ""
+               and ExtMgr.kindOf(e.source_id) == "manga" and not DB.find(e.source_id, e.novel_path) then
+                local title = title_from_path(e.novel_path)
+                if title ~= "" then
+                    DB.track({
+                        title = title, source_id = e.source_id, path = e.novel_path,
+                        total_chapters = 0, auto_added = true,
+                        last_read_at = e.progress and e.progress.updated_at or nil,
+                    })
+                end
+            end
+        end
+    end)
+    Settings:set("manga_library_recovered", true)
+end
+
 function Library.build_rows()
     local SefirahUI = require("ui.main_widget")
     -- Dans la Bibliothèque uniquement, les libellés reflètent les contenus suivis.
     -- Un type vide reste visible mais désactivé si l'autre type contient des éléments.
+    recover_started_manga()
     local all_tracked = DB.getByFilter("all")
     local kind_counts = { novels = 0, manga = 0 }
     for _, n in ipairs(all_tracked) do

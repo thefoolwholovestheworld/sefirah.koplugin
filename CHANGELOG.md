@@ -1,3 +1,25 @@
+# Sefirah v1.6.1
+
+## Français
+
+### Corrections
+- **Bibliothèque** : les mangas lus ou téléchargés apparaissent maintenant dans l'onglet Mangas, sans avoir à les mettre en favori. Ceux déjà commencés sont retrouvés à la première ouverture de la bibliothèque (le titre exact revient quand on ouvre la fiche).
+- **Veille** : après une mise en veille de la liseuse, plus besoin de la redémarrer pour rouvrir le plugin.
+
+### Nouveautés
+- Option « Manga · Ajout auto à la bibliothèque » dans Paramètres, pour désactiver cet ajout automatique.
+
+## English
+
+### Fixes
+- **Library**: manga you've read or downloaded now show up in the Manga tab, no need to add them to favourites. Ones you'd already started are picked up the first time you open the library (the exact title comes back when you open the manga's page).
+- **Sleep**: after your e-reader goes to sleep, you no longer have to restart it to reopen the plugin.
+
+### New
+- "Manga · Auto-add to library" option in Settings, to turn this off.
+
+---
+
 # Sefirah v1.6
 
 ## Français
@@ -15,6 +37,7 @@
 - Traductions : 17 langues complètes, 36 textes inutilisés supprimés.
 - Release allégée : captures, dossier `.github`, README de la communauté, `ui/community.lua`, `community_model.lua`, 13 images inutilisées et fichier `.bak` retirés ; icônes des sources déplacées sur le Hub.
 - Code mort retiré (MangaBall, quêtes).
+- **Correction** : un titre de chapitre long n'est plus coupé à gauche et à droite dans le lecteur de roman.
 
 ## English
 
@@ -31,6 +54,7 @@
 - Translations: 17 languages complete, 36 unused texts removed.
 - Lighter release: screenshots, `.github` folder, community README, `ui/community.lua`, `community_model.lua`, 13 unused images and a `.bak` file removed.
 - Dead code removed (MangaBall, quests).
+- **Fix**: a long chapter title is no longer cut off on the left and right in the novel reader.
 
 ---
 

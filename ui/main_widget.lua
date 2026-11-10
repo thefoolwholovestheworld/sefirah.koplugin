@@ -46,7 +46,82 @@ end
 
 -- ── Niveau 1 : onglet principal ───────────────────────────────────────────────
 
+-- Vrai si le widget est réellement dans la pile d'affichage de KOReader.
+local function on_stack(w)
+    if not w then return false end
+    for _, e in ipairs(UIManager._window_stack or {}) do
+        if e.widget == w then return true end
+    end
+    return false
+end
+
+-- Après une veille (ou toute fermeture faite par KOReader sans passer par
+-- SefirahUI.close), _panel peut pointer vers un panneau qui n'est plus affiché :
+-- show() redessinait alors ce panneau fantôme et rien n'apparaissait. On repart
+-- d'un état propre sans rien fermer (les widgets ne sont plus à l'écran).
+local function dlog(...)
+    local n, args = select("#", ...), { ... }
+    pcall(function()
+        local parts = {}
+        for i = 1, n do parts[#parts + 1] = tostring(args[i]) end
+        require("logger").info("Sefirah/diag: " .. table.concat(parts, " "))
+    end)
+end
+
+function SefirahUI.isPanelShown() return on_stack(_panel) end
+
+-- Description courte de la pile d'affichage (pour le log) : de bas en haut,
+-- « * » marque les widgets de Sefirah.
+local function stack_desc()
+    local mine = {}
+    for _, w in ipairs({ _panel, _detail, _export, _reader }) do if w then mine[w] = true end end
+    local out = {}
+    for _, e in ipairs(UIManager._window_stack or {}) do
+        local w = e.widget
+        local nm = w and (w.name or w.id or (w.extend and "?") or type(w)) or "nil"
+        out[#out + 1] = (mine[w] and "*" or "") .. tostring(nm)
+    end
+    return table.concat(out, " > ")
+end
+SefirahUI.stackDesc = stack_desc
+
+-- Ouverture demandée par l'utilisateur : si d'autres widgets (ex. l'accueil d'un
+-- autre plugin recréé au réveil) se sont placés AU-DESSUS des écrans Sefirah,
+-- le plugin se mettait à jour en dessous, sans rien montrer. On remonte alors les
+-- écrans Sefirah au sommet de la pile, dans le même ordre, sans rien fermer.
+function SefirahUI.raiseToFront()
+    local stack = UIManager._window_stack
+    if type(stack) ~= "table" or not _panel then return end
+    local set = {}
+    for _, w in ipairs({ _panel, _detail, _export, _reader }) do if w then set[w] = true end end
+    local lowest, foreign_above = nil, false
+    for i, e in ipairs(stack) do
+        if set[e.widget] then lowest = lowest or i
+        elseif lowest then foreign_above = true end
+    end
+    if not foreign_above then return end
+    local kept, mine = {}, {}
+    for _, e in ipairs(stack) do
+        if set[e.widget] then mine[#mine + 1] = e else kept[#kept + 1] = e end
+    end
+    for i = #stack, 1, -1 do stack[i] = nil end
+    for _, e in ipairs(kept) do stack[#stack + 1] = e end
+    for _, e in ipairs(mine) do stack[#stack + 1] = e end
+    UIManager:setDirty("all", "ui")
+    return true
+end
+
+local function drop_ghost_panel()
+    if _panel == nil then dlog("show: pas de panneau en memoire (ouverture neuve)"); return end
+    if on_stack(_panel) then dlog("show: panneau deja affiche, mise a jour sur place"); return end
+    dlog("show: PANNEAU FANTOME detecte (en memoire mais absent de l'ecran) -> remise a zero")
+    local ok, Detail = pcall(require, "ui.detail")
+    if ok and Detail and Detail.shutdown then pcall(Detail.shutdown) end
+    _panel, _detail, _export, _reader = nil, nil, nil, nil
+end
+
 function SefirahUI.show(tab)
+    drop_ghost_panel()
     pcall(function() require("core.quests").touch() end)
     if _reader then close_reader() end
     if _export then UIManager:close(_export); _export = nil end
@@ -76,6 +151,7 @@ function SefirahUI.show(tab)
     end
 
     local P = require("ui.panel")
+    dlog("show: onglet", SefirahUI.active_tab, "lignes", #rows, _panel and "swapBody" or "nouveau panneau")
     if _panel then
         _panel:swapBody(P.buildTabBody(SefirahUI.active_tab, rows, title, close_fn, nav, actions), close_fn, same_tab, nav)
     else

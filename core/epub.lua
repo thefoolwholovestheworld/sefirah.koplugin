@@ -611,6 +611,7 @@ local function export(mode, options, chapters, fetch_fn, progress)
     }
 
     local exported, errors = {}, {}
+    local groups = {}   -- { { epub = chemin, paths = { chapitres réellement écrits } } }
     local total = #chapters
 
     local function fetch_reviews()
@@ -642,7 +643,7 @@ local function export(mode, options, chapters, fetch_fn, progress)
             if progress then progress(i, #batch) end
             local html = fetch_fn(ch.path, options)
             if html then
-                table.insert(ch_data, {title = ch.name, content = html})
+                table.insert(ch_data, {title = ch.name, content = html, path = ch.path or ch.sourceUrl or ""})
             else
                 table.insert(errors, "fetch_failed:" .. tostring(ch.path))
             end
@@ -653,7 +654,11 @@ local function export(mode, options, chapters, fetch_fn, progress)
     local function do_build(filename, vol_meta, ch_data)
         local path = out_dir .. "/" .. filename:gsub('[<>:"/\\|?*]', "_") .. ".epub"
         local ok, err = build(vol_meta, ch_data, path)
-        if ok then table.insert(exported, path)
+        if ok then
+            table.insert(exported, path)
+            local paths = {}
+            for _, d in ipairs(ch_data) do paths[#paths + 1] = d.path or "" end
+            groups[#groups + 1] = { epub = path, paths = paths }
         else table.insert(errors, tostring(err)) end
     end
 
@@ -679,7 +684,7 @@ local function export(mode, options, chapters, fetch_fn, progress)
                     summary      = options.summary,
                     reviews      = reviews,
                     include_reviews = options.include_reviews == true,
-                }, {{title=ch.name, content=html}})
+                }, {{title=ch.name, content=html, path=ch.path or ch.sourceUrl or ""}})
             else
                 table.insert(errors, "fetch_failed:" .. tostring(ch.path))
             end
@@ -711,7 +716,7 @@ local function export(mode, options, chapters, fetch_fn, progress)
         end
     end
 
-    return { exported = exported, errors = errors }
+    return { exported = exported, errors = errors, groups = groups }
 end
 
 return { build = build, export = export, fetch_cover = fetch_cover, html_to_text = html_to_text }

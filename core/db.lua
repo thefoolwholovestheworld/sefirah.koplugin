@@ -181,6 +181,11 @@ function DB.recordExport(source_id, novel_path, chapter_paths, epub_path)
     save_exports()
 end
 
+-- Liste des enregistrements d'export (du plus ancien au plus récent), pour core/epubsync.lua.
+function DB.exportRecords()
+    return load_exports().records
+end
+
 -- Returns a set table {chapter_path = true} of exported chapters whose epub still exists.
 function DB.getExportedChapterSet(source_id, novel_path)
     local data = load_exports()

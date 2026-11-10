@@ -375,6 +375,7 @@ return {
     ["DROITE → GAUCHE"] = "由右至左",
     ["GAUCHE → DROITE"] = "由左至右",
     ["Manga · Supprimer après lecture : "] = "漫畫 · 讀完後刪除：",
+    ["Manga · Ajout auto à la bibliothèque : "] = "漫畫 · 自動加入書庫：",
     ["Manga · Espace maximum : "] = "漫畫 · 最大儲存空間：",
     ["ILLIMITÉ"] = "不限制",
     ["%d Mo"] = "%d MB",

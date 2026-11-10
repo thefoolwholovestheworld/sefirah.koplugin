@@ -470,6 +470,15 @@ local function categories(refresh)
         },
         {
             {
+                text     = T("Manga · Ajout auto à la bibliothèque : ") .. on_off("manga_auto_library"),
+                callback = function()
+                    Settings:toggle("manga_auto_library")
+                    refresh()
+                end,
+            },
+        },
+        {
+            {
                 text     = T("Manga · Espace maximum : ") .. manga_max_label(),
                 callback = function()
                     local cur = tonumber(Settings:get("manga_max_mb")) or 1000

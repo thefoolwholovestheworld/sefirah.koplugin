@@ -375,6 +375,7 @@ return {
     ["DROITE → GAUCHE"] = "KANAN → KIRI",
     ["GAUCHE → DROITE"] = "KIRI → KANAN",
     ["Manga · Supprimer après lecture : "] = "Manga · Hapus setelah dibaca: ",
+    ["Manga · Ajout auto à la bibliothèque : "] = "Manga · Tambah otomatis ke pustaka: ",
     ["Manga · Espace maximum : "] = "Manga · Penyimpanan maks.: ",
     ["ILLIMITÉ"] = "TANPA BATAS",
     ["%d Mo"] = "%d MB",

@@ -292,6 +292,14 @@ function Cache.getNovelEntry(source_id, novel_path)
     return get_entry(source_id, novel_path, false)
 end
 
+-- Toutes les entrées connues du cache (lecture / téléchargements), pour la
+-- récupération des mangas commencés qui ne sont pas en Bibliothèque.
+function Cache.listEntries()
+    local out = {}
+    for _, e in pairs(load_summary().novels or {}) do out[#out + 1] = e end
+    return out
+end
+
 function Cache.getDownloadedCount(source_id, novel_path)
     local e = get_entry(source_id, novel_path, false)
     if not e then return 0 end

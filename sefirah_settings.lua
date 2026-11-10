@@ -59,6 +59,8 @@ local DEFAULTS = {
     manga_direction = "auto",
     -- Supprime le CBZ dès que le chapitre est lu jusqu'à la dernière page.
     manga_autoclean = false,
+    -- Ajoute automatiquement à la Bibliothèque un manga dont on ouvre un chapitre.
+    manga_auto_library = true,
     -- Lecteur des chapitres manga : "koreader" (lecteur natif) ou "sefirah" (intégré, défaut).
     manga_reader = "sefirah",
     -- Lecteur intégré : n° de page affiché en bas ; dernière page → chapitre suivant.

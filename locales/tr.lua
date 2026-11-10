@@ -375,6 +375,7 @@ return {
     ["DROITE → GAUCHE"] = "SAĞDAN SOLA",
     ["GAUCHE → DROITE"] = "SOLDAN SAĞA",
     ["Manga · Supprimer après lecture : "] = "Manga · Okuduktan sonra sil: ",
+    ["Manga · Ajout auto à la bibliothèque : "] = "Manga · Kitaplığa otomatik ekle: ",
     ["Manga · Espace maximum : "] = "Manga · Maks. depolama: ",
     ["ILLIMITÉ"] = "SINIRSIZ",
     ["%d Mo"] = "%d MB",

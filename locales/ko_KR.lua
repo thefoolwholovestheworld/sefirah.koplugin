@@ -375,6 +375,7 @@ return {
     ["DROITE → GAUCHE"] = "오른쪽 → 왼쪽",
     ["GAUCHE → DROITE"] = "왼쪽 → 오른쪽",
     ["Manga · Supprimer après lecture : "] = "만화 · 읽은 후 삭제: ",
+    ["Manga · Ajout auto à la bibliothèque : "] = "만화 · 서재에 자동 추가: ",
     ["Manga · Espace maximum : "] = "만화 · 최대 저장 공간: ",
     ["ILLIMITÉ"] = "무제한",
     ["%d Mo"] = "%d MB",

@@ -375,6 +375,7 @@ return {
     ["DROITE → GAUCHE"] = "DESTRA → SINISTRA",
     ["GAUCHE → DROITE"] = "SINISTRA → DESTRA",
     ["Manga · Supprimer après lecture : "] = "Manga · Elimina dopo la lettura: ",
+    ["Manga · Ajout auto à la bibliothèque : "] = "Manga · Aggiungi automaticamente alla libreria: ",
     ["Manga · Espace maximum : "] = "Manga · Spazio massimo: ",
     ["ILLIMITÉ"] = "ILLIMITATO",
     ["%d Mo"] = "%d MB",
