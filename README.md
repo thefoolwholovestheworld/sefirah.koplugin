@@ -8,7 +8,7 @@ Browse multiple sources, follow your favorite stories, download chapters and rea
 
 ## Screenshots
 
-*The interface follows KOReader's language unless you select another language in the plugin settings. The screenshots below show the French interface. Appearance may vary between versions.*
+*The interface follows KOReader's language unless you select another language in the plugin settings. The screenshots below show the French interface. Some screenshots predate the latest versions, so appearance may differ slightly from the current plugin.*
 
 Screenshots are grouped with the features they illustrate below: [library and discovery](#library-and-discovery), [novels and fanfiction](#novels-and-fanfiction), [manga and webtoons](#manga-manhwa-and-webtoons), [progress center](#progress-center), [settings](#interface-and-customization) and [sources](#sources).
 
@@ -24,14 +24,15 @@ Screenshots are grouped with the features they illustrate below: [library and di
 | :---: | :---: |
 | <img src="images/IMG-20261024-WA0020.jpg" alt="Manga browsing catalog" width="320"> | <img src="images/IMG-20261024-WA0013.jpg" alt="MangaBall search results for One Piece" width="320"> |
 
+- **Four tabs:** Library, Browse, Sources and More.
 - **Novels and manga:** switch between content types in the Library, Browse and Sources tabs.
-- **Personal library:** keep track of followed titles and resume reading.
+- **Personal library:** keep track of followed titles and resume reading. Manga you read or download are added to the Manga tab automatically (this can be turned off in the settings).
 - **Search and sorting:** alphabetical order, new chapters, recently added or recently read.
 - **Release tracking:** refresh one title or your entire library to check for new chapters.
 - **Global search** across installed sources.
 - **Browsing filters**, depending on the source: genres, rankings, time periods and sorting.
 - **Filters remembered per source**, with source filtering by language.
-- **Sources installed on demand** from the Sources tab.
+- **Sources installed on demand** from the Sources tab, using the online catalog of [Sefirah Source Hub](https://thefoolwholovestheworld.github.io/Sefirah-Source-Hub/).
 - **Cached covers**, with separate options to disable them in the library, catalogs and title details.
 
 ### Novels and fanfiction
@@ -45,11 +46,15 @@ Screenshots are grouped with the features they illustrate below: [library and di
 | <img src="images/IMG-20261024-WA0023.jpg" alt="Novel chapter displayed in the built-in reader" width="260"> | <img src="images/IMG-20261024-WA0026.jpg" alt="Built-in novel reader with chapter controls" width="260"> | <img src="images/IMG-20261024-WA0025.jpg" alt="Font and layout settings for the novel reader" width="260"> |
 
 - **Title details** with cover, description, favorites and resume reading.
-- **Chapter management:** search, jump to a chapter, and sort in ascending or descending order.
+- **Chapter management:** search, jump to a chapter, and sort in ascending or descending order. The chapter list can open on the page of the chapter you are reading.
 - **Built-in reader** with font selection, text size, line spacing and text width settings.
+- **Optional chapter title:** hide the title bar text to give more room to the story. The back arrow and the settings gear stay available.
+- **Large navigation buttons** in the reader, which can be turned off.
 - **KOReader dictionary integration** while reading.
 - **Previous and next chapter navigation**.
-- **New chapter alerts** when connecting to the network, according to your preferences.
+- **New chapter alerts**, per novel: when you add a novel to your favorites, Sefirah asks whether you want to be notified. Alerts can also be enabled for all novels or turned off in the settings. Each time the e-reader connects to Wi-Fi, notified novels are checked and a popup with the cover appears for each one that has new chapters, anywhere in KOReader.
+- **Reading speed (words per minute)**, measured from the pages you actually read, and shown in the progress center. It can be turned off.
+- **KOReader statistics:** reading time and pages in Sefirah's reader are also counted in KOReader's own Statistics screen.
 - **Reviews and comments**, where supported by the source: title reviews, chapter comments and paragraph comments.
 - **Optional offline comments.** Downloading comments can make chapter downloads slower.
 - **Hide comments and reviews** by long-pressing the corresponding icon.
@@ -72,8 +77,8 @@ Translate a chapter from the reader or the title details page into your chosen l
 
 | Engine | Setup |
 | --- | --- |
-| **DeepL** | API key required |
-| **Google Translate** | No API key required |
+| **DeepL** (API Free) | API key required |
+| **Google Translate** | No API key required, but noticeably slower |
 | **Gemini** | API key required |
 
 *Availability, quotas and any charges depend on the provider. Text submitted for translation is sent to the selected service.*
@@ -88,6 +93,8 @@ Export novels in the format that suits your reading:
 - **A chapter range**.
 
 Chapters are fetched before the EPUB is built.
+
+**Synchronization with your KOReader library.** For an EPUB exported by Sefirah, your position is kept in sync in both directions: reading in Sefirah updates the EPUB's progress in the KOReader library, and the chapter you reach when reading the EPUB in KOReader is reported back to Sefirah. Sefirah only touches EPUB files it created itself and can match exactly with the chapters it exported.
 
 ### Manga, manhwa and webtoons
 
@@ -104,6 +111,7 @@ Chapters are fetched before the EPUB is built.
 - **Next chapter preloading**, which can be disabled.
 - **Parallel image downloads**.
 - **Configurable image quality:** original or compressed.
+- **Automatic library entry** for manga you read or download, which can be turned off.
 - **Storage management:** space limit, delete after reading, cleanup by title or remove all downloads.
 - **CBZ export** for offline reading.
 
@@ -123,8 +131,9 @@ Track your reading activity in a dedicated space:
 - **Daily, weekly and monthly quests**.
 - **Achievements** organized by difficulty.
 - **Pages, chapters and reading time tracking**.
+- **Reading speed** in words per minute.
 - **Reading streaks**.
-- **Optional community leaderboard**.
+- **Optional community leaderboard**, where your stats (pages read, chapters, streak, words per minute) are visible in the ranking and in a friend's menu.
 - **Friends and profile picture**.
 - **Help screen** explaining levels and ways to earn XP.
 
@@ -140,46 +149,71 @@ Local progress and quests are managed on the device. Community features require 
 - **Night mode** throughout the plugin.
 - **17 interface languages:** Arabic, Chinese (Simplified and Traditional), Dutch, English, French, German, Indonesian, Italian, Japanese, Korean, Polish, Portuguese (Brazil and Portugal), Russian, Spanish and Turkish.
 - **Automatic language selection** based on KOReader, or manual selection.
-- **Settings organized by category**, including downloads, covers, translation and manga.
+- **Settings organized by category**, including general, downloads, covers, translation and manga.
 - **Reset progression statistics** without deleting your library or downloads.
 
 ## Sources
 
-Install sources from the **Sources** tab. Once installed, they appear in **Browse**.
+**Sefirah does not include any source.** Sources are small Lua files downloaded on demand from the online catalog of [Sefirah Source Hub](https://thefoolwholovestheworld.github.io/Sefirah-Source-Hub/). This keeps the plugin light, and sources can be fixed or added without a new plugin release.
 
 | Source selection | Novel extensions | Manga and webtoon extensions |
 | :---: | :---: | :---: |
 | <img src="images/IMG-20261024-WA0010.jpg" alt="Source selection menu for novels and manga" width="260"> | <img src="images/IMG-20261024-WA0011.jpg" alt="Available novel source extensions" width="260"> | <img src="images/IMG-20261024-WA0012.jpg" alt="Available manga and webtoon source extensions" width="260"> |
 
-### Novels and fanfiction
+### Installing and managing sources
 
-| Source |
-| --- |
-| 69书吧 — 69shu |
-| Archive of Our Own — AO3 |
-| Kakuyomu |
-| LightNovelVF |
-| Novel Mania |
-| NovelFire |
-| NovelFrance |
-| RanobeHub |
-| Royal Road |
-| SkyNovels |
-| Wattpad |
+1. Connect your e-reader to Wi-Fi and open the **Sources** tab.
+2. Tap the **antenna icon** and choose **Refresh the catalog**.
+3. Tap the **install icon** next to a source to download and install it. It then appears in **Browse**.
+4. When a newer version exists, an **Update** button appears in the source's settings.
+5. **Delete the source** removes its file. A source from the catalog can be downloaded again at any time.
 
-### Manga and webtoons
+You can also **receive a source with a code**: create or test a source on Sefirah Source Hub, which shows a 4-digit code valid for a few minutes, then choose **Receive with a code** in the antenna menu and enter it. No cable and no restart needed.
 
-| Source |
-| --- |
-| Anime-Sama |
-| FMTeam |
-| InManga |
-| MangaBall |
-| MangaDex |
-| MangaPill |
-| WEBTOON |
+Sources already installed on your e-reader keep working if you update the plugin. Sources you had installed are restored automatically when the catalog is refreshed, if a plugin update removed them.
 
-*Source availability depends on the plugin version. Some sources may not be included in older releases.*
+### Available sources
+
+The catalog evolves, so the list below is a snapshot and the Sources tab is the reference. Languages are those of the source's content.
+
+#### Novels and fanfiction
+
+| Source | Language |
+| --- | --- |
+| 69书吧 — 69shu | Chinese |
+| Ar Novel | Arabic |
+| Archive of Our Own — AO3 | Multiple |
+| Azora Moon | Arabic |
+| Beast Novels | English |
+| Blume-Verse | English |
+| Cenele | Arabic |
+| Ixdzs8 | Chinese |
+| Kakuyomu | Japanese |
+| LightNovelVF | French |
+| Linovelib | Chinese |
+| LNCrawler | Multiple |
+| MyDramaNovel | English |
+| Novel Mania | Portuguese |
+| NovelFire | English |
+| NovelFrance | French |
+| NovelFull | English |
+| NovelNinja | English |
+| RanobeHub | Russian |
+| ReadNovel | English |
+| Rewayahfans | Arabic |
+| Royal Road | English |
+| SeaNovel | Arabic |
+| SkyNovels | Spanish |
+| TruyenDichAI | Vietnamese |
+| Wattpad | Multiple |
+| Wordrain | English |
+| WuxiaWorld.site | English |
+
+#### Manga and webtoons
+
+| Source | Language |
+| --- | --- |
+
 
 ### Source availability and limitations
 
@@ -197,7 +231,7 @@ Use sources and download features in accordance with authors' rights and platfor
 4. Make sure `main.lua` is directly inside `plugins/sefirah.koplugin/`, with no extra nested folder.
 5. Restart KOReader.
 6. Open **Sefirah** from the **Tools** menu.
-7. Install your preferred sources in **Sources**.
+7. Connect to Wi-Fi, open **Sources**, refresh the catalog and install your preferred sources.
 8. Open **Browse**, select a title and add it to your library.
 
 ## Updating
@@ -206,6 +240,7 @@ Use sources and download features in accordance with authors' rights and platfor
 2. Back up your Sefirah data as a precaution.
 3. Replace the `sefirah.koplugin` folder with the one from the new release.
 4. Restart KOReader.
+5. Open **Sources** and refresh the catalog if some sources are missing or have an **Update** button.
 
 Settings and library data are stored in KOReader's settings directory, separately from the plugin code. **Do not delete this data when updating.**
 
@@ -217,21 +252,27 @@ Settings and library data are stored in KOReader's settings directory, separatel
 - Check that the archive was fully extracted.
 - Make sure the plugin folder does not contain another nested `sefirah.koplugin` folder.
 - Copy the complete plugin folder again if an error mentions missing files.
+- If Sefirah no longer opens after your e-reader went to sleep, update to version 1.6.1 or later, which fixes this.
 
 If the plugin fails to open, diagnostic information may be written to **`sefirah/last_open_error.txt`** inside KOReader's settings directory, as well as **`crash.log`**.
+
+### No source is available, or a source is missing
+
+- Sources are not bundled with the plugin: connect to Wi-Fi, open **Sources** and choose **Refresh the catalog** from the antenna menu.
+- If the catalog does not load, check your connection and try again later.
 
 ### A source stops working
 
 - Check your connection.
 - Try again later: the website may be temporarily unavailable.
-- Make sure you are using a recent version of Sefirah.
+- Make sure you are using a recent version of Sefirah, and that the source is up to date (**Update** button in the source's settings).
 - Check any **`*_last_error.txt`** files generated for the source.
 
 When reporting an issue, include:
 
 - Your KOReader and Sefirah versions.
 - Your e-reader model.
-- The affected source.
+- The affected source and its version.
 - Steps to reproduce the problem.
 - The error message or relevant log, **with API keys and other private information removed**.
 
@@ -256,6 +297,10 @@ The reference strings in the code are written in **French**. Translation files a
 4. Add the language to the selector in `ui/settings_dialog.lua`.
 
 Some translations are machine-generated and may need proofreading.
+
+### Adding or fixing a source
+
+Sources are created, tested and shared with [Sefirah Source Hub](https://thefoolwholovestheworld.github.io/Sefirah-Source-Hub/), a web app that generates a source from a site's address and tests it. Source files and the catalog live in the [Sefirah-Source-Hub](https://github.com/thefoolwholovestheworld/Sefirah-Source-Hub) repository.
 
 Contributions are also welcome for bug fixes, source maintenance and documentation improvements.
 
