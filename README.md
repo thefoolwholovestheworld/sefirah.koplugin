@@ -213,7 +213,13 @@ The catalog evolves, so the list below is a snapshot and the Sources tab is the 
 
 | Source | Language |
 | --- | --- |
-
+| Anime-Sama | French |
+| FMTeam | French |
+| InManga | Spanish |
+| MangaBall | Multiple |
+| MangaDex | Multiple |
+| MangaPill | English |
+| WEBTOON | Multiple |
 
 ### Source availability and limitations
 
