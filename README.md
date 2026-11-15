@@ -6,11 +6,6 @@ Browse multiple sources, follow your favorite stories, download chapters and rea
 
 > **Sefirah is a fork of [Mythos](https://github.com/unitreign/Mythos), created by unitreign**, distributed under the **GPL-3.0** license and modified by **thefoolwholovestheworld**.
 
-## Screenshots
-
-*The interface follows KOReader's language unless you select another language in the plugin settings. The screenshots below show the French interface. Some screenshots predate the latest versions, so appearance may differ slightly from the current plugin.*
-
-Screenshots are grouped with the features they illustrate below: [library and discovery](#library-and-discovery), [novels and fanfiction](#novels-and-fanfiction), [manga and webtoons](#manga-manhwa-and-webtoons), [progress center](#progress-center), [settings](#interface-and-customization) and [sources](#sources).
 
 ## Features
 
