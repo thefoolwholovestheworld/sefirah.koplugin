@@ -7,6 +7,7 @@ Browse multiple sources, follow your favorite stories, download chapters and rea
 > **Sefirah is a fork of [Mythos](https://github.com/unitreign/Mythos), created by unitreign**, distributed under the **GPL-3.0** license and modified by **thefoolwholovestheworld**.
 
 
+
 ## Features
 
 ### Library and discovery
