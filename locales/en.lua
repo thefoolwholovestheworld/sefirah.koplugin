@@ -1121,6 +1121,8 @@ return {
     ["Source refusée : "] = "Source rejected: ",
     ["Source installée avec son icône : "] = "Source installed with its icon: ",
     ["Source installée : "] = "Source installed: ",
+    ["Le défi des pages"] = "Page challenge",
+    
     [" (icône non disponible dans le transfert)."] = " (icon not available in the transfer).",
     ["Identifiant de source invalide."] = "Invalid source identifier.",
     ["Fichier vide ou trop gros."] = "File is empty or too large.",
@@ -1138,4 +1140,8 @@ return {
     ["Route sociale inconnue."] = "Unknown social route.",
     ["Le serveur social doit être une URL HTTPS sans chemin."] = "The social server must be an HTTPS URL with no path.",
     ["Aucune source. Connecte la liseuse au Wi-Fi puis touche « Actualiser le catalogue »."] = "No sources yet. Connect the e-reader to Wi-Fi, then tap “Refresh the catalogue”.",
+    ["Fidèle à un récit"] = "True to a story",
+    ["Lire % pages dans un même titre aujourd'hui"] = "Read % pages in the same title today",
+    ["Du temps pour soi"] = "Time for yourself",
+    ["Lire pendant % minutes aujourd'hui"] = "Read for % minutes today",
 }
