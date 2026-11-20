@@ -1151,5 +1151,11 @@ return {
     ["Journée immergée"] = "Lost in a story",
     ["Chasseur de pépites"] = "Hidden gem hunter",
     ["Journée de lecture"] = "Day of reading",
-    
+    ["Voyage entre les lignes"] = "A journey between the lines",
+    ["Une semaine de lecteur"] = "A week of reading",
+    ["Explorateur d'histoires"] = "Explorer of stories",
+    ["Immersion prolongée"] = "Prolonged immersion",
+    ["Dévoreur de pages"] = "Devourer of pages",
+    ["Tous les jours une histoire"] = "Every day a story",
+    ["Commencer %d nouveaux titres cette semaine"] = "Start %d new titles this week",
 }
