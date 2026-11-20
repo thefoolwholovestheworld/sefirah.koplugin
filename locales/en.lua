@@ -1121,8 +1121,6 @@ return {
     ["Source refusée : "] = "Source rejected: ",
     ["Source installée avec son icône : "] = "Source installed with its icon: ",
     ["Source installée : "] = "Source installed: ",
-    ["Le défi des pages"] = "Page challenge",
-    
     [" (icône non disponible dans le transfert)."] = " (icon not available in the transfer).",
     ["Identifiant de source invalide."] = "Invalid source identifier.",
     ["Fichier vide ou trop gros."] = "File is empty or too large.",
@@ -1144,4 +1142,12 @@ return {
     ["Lire % pages dans un même titre aujourd'hui"] = "Read % pages in the same title today",
     ["Du temps pour soi"] = "Time for yourself",
     ["Lire pendant % minutes aujourd'hui"] = "Read for % minutes today",
+    ["Explorateur d'histoires"] = "Novel explorer",
+    ["Commencer % nouveaux titres aujourd'hui"] = "Start % new novels today",
+    ["Le défi des pages"] = "Page challenge",
+    ["Soif d'histoires"] = "Thirst for stories",
+    ["Terminer % chapitres aujourd'hui"] = "Finish % chapters today",
+    ["Au cœur d'un récit"] = "At the heart of a story",
+    ["Journée immergée"] = "Lost in a story",
+    ["Chasseur de pépites"] = "Hidden gem hunter",
 }
