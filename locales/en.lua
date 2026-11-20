@@ -1150,4 +1150,6 @@ return {
     ["Au cœur d'un récit"] = "At the heart of a story",
     ["Journée immergée"] = "Lost in a story",
     ["Chasseur de pépites"] = "Hidden gem hunter",
+    ["Journée de lecture"] = "Day of reading",
+    
 }
